@@ -9,33 +9,49 @@ m = 16 # 16 or 32
 residual_blocks=False #True or False
 block_reps = 1 #Conv block repetition factor: 1 or 2
 
+import os
 import torch, data, iou
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import sparseconvnet as scn
 import time
-import os, sys, glob
-import math
-import numpy as np
+
+TRAIN_NAME = 'scene_level_baseline'
 
 use_cuda = torch.cuda.is_available()
-exp_name='unet_scale20_m16_rep1_notResidualBlocks'
+if not os.path.exists('exp'):
+    os.makedirs('exp')
+if not os.path.exists(os.path.join('exp', TRAIN_NAME)):
+    os.makedirs(os.path.join('exp', TRAIN_NAME))
+exp_name=os.path.join('exp', TRAIN_NAME, TRAIN_NAME)
 
 class Model(nn.Module):
     def __init__(self):
-        nn.Module.__init__(self)
-        self.sparseModel = scn.Sequential().add(
-           scn.InputLayer(data.dimension,data.full_scale, mode=4)).add(
-           scn.SubmanifoldConvolution(data.dimension, 3, m, 3, False)).add(
-               scn.UNet(data.dimension, block_reps, [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], residual_blocks)).add(
-           scn.BatchNormReLU(m)).add(
-           scn.OutputLayer(data.dimension))
+        super().__init__()
+        self.sparseModel = scn.Sequential(
+            scn.InputLayer(data.dimension,data.full_scale, mode=4),
+            scn.SubmanifoldConvolution(data.dimension, 3, m, 3, False),
+            scn.UNet(data.dimension, block_reps, [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], residual_blocks),
+            scn.BatchNormReLU(m),
+            scn.OutputLayer(data.dimension)
+        )
         self.linear = nn.Linear(m, 20)
-    def forward(self,x):
-        x=self.sparseModel(x)
-        x=self.linear(x)
-        return x
+    def forward(self, x, istrain=False):
+        if istrain:
+            batch_offsets = x[-1]
+            B = batch_offsets.size(0) - 1
+            out_feats = self.sparseModel(x[:-1]) # B, NumPts, C
+            global_feats = []
+            for idx in range(B):
+                global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
+            global_feats = torch.stack(global_feats)
+            assert global_feats.size(0) == B == 32, f"{global_feats.size(0)}"
+            global_logits=self.linear(global_feats) # B, 20
+        else:
+            out_feats = self.sparseModel(x) 
+            global_logits=self.linear(out_feats)
+
+        return global_logits
 
 unet=Model()
 if use_cuda:
@@ -44,7 +60,7 @@ if use_cuda:
 training_epochs=512
 training_epoch=scn.checkpoint_restore(unet,exp_name,'unet',use_cuda)
 optimizer = optim.Adam(unet.parameters())
-print('#classifer parameters', sum([x.nelement() for x in unet.parameters()]))
+print('#classifier parameters', sum([x.nelement() for x in unet.parameters()]))
 
 for epoch in range(training_epoch, training_epochs+1):
     unet.train()
@@ -52,18 +68,28 @@ for epoch in range(training_epoch, training_epochs+1):
     scn.forward_pass_multiplyAdd_count=0
     scn.forward_pass_hidden_states=0
     start = time.time()
-    train_loss=0
-    for i,batch in enumerate(data.train_data_loader):
+    train_loss = 0
+    criterion = nn.BCEWithLogitsLoss()
+    for i, batch in enumerate(data.train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
-            batch['x'][1]=batch['x'][1].cuda()
-            batch['y']=batch['y'].cuda()
-        predictions=unet(batch['x'])
-        loss = torch.nn.functional.cross_entropy(predictions,batch['y'])
-        train_loss+=loss.item()
+            batch['x'][1] = batch['x'][1].cuda()
+            batch['x'][2] = batch['x'][2].cuda()
+            batch['y'] = batch['y'].cuda()
+        predictions = unet(batch['x'], istrain=True)
+        # print(predictions.size())
+        # print(batch['y'].size())
+        loss = criterion(predictions, batch['y'])
+        train_loss += loss.item()
         loss.backward()
         optimizer.step()
-    print(epoch,'Train loss',train_loss/(i+1), 'MegaMulAdd=',scn.forward_pass_multiplyAdd_count/len(data.train)/1e6, 'MegaHidden',scn.forward_pass_hidden_states/len(data.train)/1e6,'time=',time.time() - start,'s')
+    print(
+        epoch,
+        'Train loss',train_loss/(i+1), 
+        'MegaMulAdd',scn.forward_pass_multiplyAdd_count/len(data.train)/1e6, 
+        'MegaHidden',scn.forward_pass_hidden_states/len(data.train)/1e6,
+        'time',time.time() - start,'s'
+        )
     scn.checkpoint_save(unet,exp_name,'unet',epoch, use_cuda)
 
     if scn.is_power2(epoch):
@@ -77,8 +103,15 @@ for epoch in range(training_epoch, training_epochs+1):
                 for i,batch in enumerate(data.val_data_loader):
                     if use_cuda:
                         batch['x'][1]=batch['x'][1].cuda()
-                        batch['y']=batch['y'].cuda()
+                        batch['y_orig']=batch['y_orig'].cuda()
                     predictions=unet(batch['x'])
                     store.index_add_(0,batch['point_ids'],predictions.cpu())
-                print(epoch,rep,'Val MegaMulAdd=',scn.forward_pass_multiplyAdd_count/len(data.val)/1e6, 'MegaHidden',scn.forward_pass_hidden_states/len(data.val)/1e6,'time=',time.time() - start,'s')
+                print(
+                    epoch,
+                    rep,
+                    'Val MegaMulAdd=', scn.forward_pass_multiplyAdd_count/len(data.val)/1e6, 
+                    'MegaHidden', scn.forward_pass_hidden_states/len(data.val)/1e6,
+                    'time',time.time() - start,
+                    's'
+                    )
                 iou.evaluate(store.max(1)[1].numpy(),data.valLabels)

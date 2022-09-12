@@ -10,6 +10,8 @@ val_reps=1 # Number of test views, 1 or more
 batch_size=32
 elastic_deformation=False
 
+NUM_CLASSES = 20
+
 import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time
 
 dimension=3
@@ -20,11 +22,11 @@ full_scale=4096 #Input field size
 
 train,val=[],[]
 for x in torch.utils.data.DataLoader(
-        glob.glob('train/*.pth'),
+        glob.glob('train_processed/*.pth'),
         collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
     train.append(x)
 for x in torch.utils.data.DataLoader(
-        glob.glob('val/*.pth'),
+        glob.glob('val_processed/*.pth'),
         collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
     val.append(x)
 print('Training examples:', len(train))
@@ -53,8 +55,12 @@ def trainMerge(tbl):
     locs=[]
     feats=[]
     labels=[]
+    scene_labels = []
+    batch_offsets = [0]
+
     for idx,i in enumerate(tbl):
         a,b,c=train[i] # a - coords, b - colors, c - label
+
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
         m*=scale
@@ -64,23 +70,35 @@ def trainMerge(tbl):
         if elastic_deformation:
             a=elastic(a,6*scale//50,40*scale/50) # 16
             a=elastic(a,20*scale//50,160*scale/50) # 64
-        m=a.min(0)
-        M=a.max(0)
-        q=M-m
-        offset=-m+np.clip(full_scale-M+m-0.001,0,None)*np.random.rand(3)+np.clip(full_scale-M+m+0.001,None,0)*np.random.rand(3)
+        m = a.min(0)
+        M = a.max(0)
+        length=M-m
+        offset=-m + np.clip(full_scale-length-0.001,0,None) * np.random.rand(3) + np.clip(full_scale-length+0.001,None,0) * np.random.rand(3)
         a+=offset
-        idxs=(a.min(1)>=0)*(a.max(1)<full_scale) # box in [0, full_scale]^3 Actual size is full_scale / scale = 200m
-        a=a[idxs]
-        b=b[idxs]
-        c=c[idxs]
-        a=torch.from_numpy(a).long()
-        locs.append(torch.cat([a,torch.LongTensor(a.shape[0],1).fill_(idx)],1))
+
+        idxs = (a.min(1)>=0)*(a.max(1)<full_scale) # box in [0, full_scale]^3 Actual size is full_scale / scale = 200m
+        a = a[idxs]
+        b = b[idxs]
+        c = c[idxs]
+        a = torch.from_numpy(a).long()
+
+        scene_label_inds = np.unique(c).astype('int')
+        scene_label_inds = scene_label_inds[scene_label_inds >= 0]
+        scene_label = np.zeros(NUM_CLASSES)
+        scene_label[scene_label_inds] = 1.
+
+        locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c))
-    locs=torch.cat(locs,0)
-    feats=torch.cat(feats,0)
-    labels=torch.cat(labels,0)
-    return {'x': [locs,feats], 'y': labels.long(), 'id': tbl}
+        scene_labels.append(torch.from_numpy(scene_label))
+        batch_offsets.append(batch_offsets[-1] + np.sum(idx))
+
+    locs = torch.cat(locs, 0)
+    feats = torch.cat(feats, 0)
+    labels = torch.cat(labels, 0) # B, N
+    batch_offsets = torch.tensor(batch_offsets) # B, 
+    scene_labels = torch.stack(scene_labels) # B, NumClasses
+    return {'x': [locs, feats, batch_offsets], 'y_orig': labels.long(), 'y': scene_labels, 'id': tbl}
 train_data_loader = torch.utils.data.DataLoader(
     list(range(len(train))),
     batch_size=batch_size,
@@ -102,9 +120,12 @@ def valMerge(tbl):
     locs=[]
     feats=[]
     labels=[]
+    scene_labels = []
     point_ids=[]
+
     for idx,i in enumerate(tbl):
         a,b,c=val[i]
+
         m=np.eye(3)
         m[0][0]*=np.random.randint(0,2)*2-1
         m*=scale
@@ -116,20 +137,29 @@ def valMerge(tbl):
         q=M-m
         offset=-m+np.clip(full_scale-M+m-0.001,0,None)*np.random.rand(3)+np.clip(full_scale-M+m+0.001,None,0)*np.random.rand(3)
         a+=offset
+
         idxs=(a.min(1)>=0)*(a.max(1)<full_scale)
         a=a[idxs]
         b=b[idxs]
         c=c[idxs]
         a=torch.from_numpy(a).long()
+
+        scene_label_inds = np.unique(c).astype('int')
+        scene_label_inds = scene_label_inds[scene_label_inds >= 0]
+        scene_label = np.zeros(NUM_CLASSES)
+        scene_label[scene_label_inds] = 1
+
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0],1).fill_(idx)],1))
         feats.append(torch.from_numpy(b))
         labels.append(torch.from_numpy(c))
+        scene_labels.append(torch.from_numpy(scene_label))
         point_ids.append(torch.from_numpy(np.nonzero(idxs)[0]+valOffsets[i]))
     locs=torch.cat(locs,0)
     feats=torch.cat(feats,0)
     labels=torch.cat(labels,0)
+    scene_labels = torch.stack(scene_labels) # B, NumClasses
     point_ids=torch.cat(point_ids,0)
-    return {'x': [locs,feats], 'y': labels.long(), 'id': tbl, 'point_ids': point_ids}
+    return {'x': [locs,feats], 'y_orig': labels.long(), 'y': scene_labels.long(), 'id': tbl, 'point_ids': point_ids}
 val_data_loader = torch.utils.data.DataLoader(
     list(range(len(val))),
     batch_size=batch_size,
