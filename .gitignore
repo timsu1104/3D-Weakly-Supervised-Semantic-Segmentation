@@ -163,6 +163,8 @@ cython_debug/
 **.json
 **/train
 **/val
+**/exp
 **.tar
+**.pth
 **-main
 output/
