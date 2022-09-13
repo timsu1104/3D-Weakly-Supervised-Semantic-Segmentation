@@ -12,6 +12,7 @@ block_reps = 1 #Conv block repetition factor: 1 or 2
 import os
 import torch, data, iou
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import sparseconvnet as scn
 import time
@@ -38,15 +39,21 @@ class Model(nn.Module):
         self.linear = nn.Linear(m, 20)
     def forward(self, x, istrain=False):
         if istrain:
-            batch_offsets = x[-1]
-            B = batch_offsets.size(0) - 1
             out_feats = self.sparseModel(x[:-1]) # B, NumPts, C
+            # print("OUT_FEATS", out_feats)
+
+            batch_offsets = x[-1]
+            # print("BATCH_OFF", batch_offsets)
+            B = batch_offsets.size(0) - 1
             global_feats = []
             for idx in range(B):
+                # print("SPLIT", batch_offsets[idx], batch_offsets[idx+1])
                 global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
             global_feats = torch.stack(global_feats)
-            assert global_feats.size(0) == B == 32, f"{global_feats.size(0)}"
+            # print("GLOBAL_FEATS", global_feats)
+            assert global_feats.size(0) == B, f"{global_feats.size(0)}"
             global_logits=self.linear(global_feats) # B, 20
+            # print("GLOBAL_LOGITS", global_logits)
         else:
             out_feats = self.sparseModel(x) 
             global_logits=self.linear(out_feats)
@@ -69,7 +76,7 @@ for epoch in range(training_epoch, training_epochs+1):
     scn.forward_pass_hidden_states=0
     start = time.time()
     train_loss = 0
-    criterion = nn.BCEWithLogitsLoss()
+    # criterion = nn.MultiLabelSoftMarginLoss() #nn.BCEWithLogitsLoss()
     for i, batch in enumerate(data.train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
@@ -79,7 +86,8 @@ for epoch in range(training_epoch, training_epochs+1):
         predictions = unet(batch['x'], istrain=True)
         # print(predictions.size())
         # print(batch['y'].size())
-        loss = criterion(predictions, batch['y'])
+        # print("target", batch['y'])
+        loss = F.multilabel_soft_margin_loss(predictions, batch['y'])
         train_loss += loss.item()
         loss.backward()
         optimizer.step()

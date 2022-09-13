@@ -7,7 +7,7 @@
 # Options
 scale=20  #Voxel size = 1/scale - 5cm
 val_reps=1 # Number of test views, 1 or more
-batch_size=32
+batch_size=8
 elastic_deformation=False
 
 NUM_CLASSES = 20
@@ -91,7 +91,7 @@ def trainMerge(tbl):
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c))
         scene_labels.append(torch.from_numpy(scene_label))
-        batch_offsets.append(batch_offsets[-1] + np.sum(idx))
+        batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 
     locs = torch.cat(locs, 0)
     feats = torch.cat(feats, 0)
