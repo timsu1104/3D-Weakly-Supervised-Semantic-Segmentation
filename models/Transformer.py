@@ -30,6 +30,7 @@ from torch import nn
 
 from .misc import Result
 from .utils import ResidualAttentionBlock
+from utils.registry import MODEL_REGISTRY
 
 
 class Transformer(nn.Module):
@@ -58,7 +59,7 @@ class Transformer(nn.Module):
                 x = resblock(x)
         return x
 
-
+@MODEL_REGISTRY.register()
 class TextTransformer(nn.Module):
 
     def __init__(

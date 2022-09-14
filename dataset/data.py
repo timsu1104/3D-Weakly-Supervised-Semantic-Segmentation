@@ -6,8 +6,14 @@
 
 NUM_CLASSES = 20
 
-import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time, json
-from utils.text_transform_builder import text_transform
+import torch, numpy as np
+import torch.utils.data, scipy.ndimage
+import multiprocessing as mp, time, json
+import os, sys, glob
+
+from .dataset_utils import text_transform
+
+sys.path.append(os.getcwd()) # HACK: add working directory
 from utils.config import cfg
 
 scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
@@ -29,11 +35,11 @@ full_scale=4096 #Input field size
 train = []
 val = []
 for x in torch.utils.data.DataLoader(
-        glob.glob('train_processed/*.pth'),
+        glob.glob('dataset/ScanNet/train_processed/*.pth'),
         collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count()):
     train.append(x)
 for x in torch.utils.data.DataLoader(
-        glob.glob('val_processed/*.pth'),
+        glob.glob('dataset/ScanNet/val_processed/*.pth'),
         collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
     val.append(x)
 print('Training examples:', len(train))
@@ -74,8 +80,8 @@ def trainMerge(tbl):
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
         m*=scale
-        theta=np.random.rand()*2*math.pi
-        m=np.matmul(m,[[math.cos(theta),math.sin(theta),0],[-math.sin(theta),math.cos(theta),0],[0,0,1]])
+        theta=np.random.rand()*2*np.pi
+        m=np.matmul(m,[[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
         a=np.matmul(a,m)
         if elastic_deformation:
             a=elastic(a,6*scale//50,40*scale/50) # 16
@@ -152,8 +158,8 @@ def valMerge(tbl):
         m=np.eye(3)
         m[0][0]*=np.random.randint(0,2)*2-1
         m*=scale
-        theta=np.random.rand()*2*math.pi
-        m=np.matmul(m,[[math.cos(theta),math.sin(theta),0],[-math.sin(theta),math.cos(theta),0],[0,0,1]])
+        theta=np.random.rand()*2*np.pi
+        m=np.matmul(m,[[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
         a=np.matmul(a,m)+full_scale/2+np.random.uniform(-2,2,3)
         m=a.min(0)
         M=a.max(0)

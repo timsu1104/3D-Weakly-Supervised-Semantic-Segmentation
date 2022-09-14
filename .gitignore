@@ -162,6 +162,8 @@ cython_debug/
 # 3d_dataset/
 **/train
 **/val
+**/train_processed
+**/val_processed
 **/exp
 **.tar
 **.pth

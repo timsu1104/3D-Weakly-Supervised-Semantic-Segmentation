@@ -1,5 +1,5 @@
 GENERAL:
-  training_name: scene_level_with_text
+  training_name: scene_level_with_text_refactored
 
 DATA:
   pointcloud_data:
@@ -13,10 +13,12 @@ DATA:
 
 STRUCTURE:
   pointcloud_model:
+    name: SparseConvNet
     m: 16 # 16 or 32
     residual_blocks: False #True or False
     block_reps: 1 #Conv block repetition factor: 1 or 2
   text_model:
+    name: TextTransformer
     width: 256
     vocab_size: 49408
     context_length: 120

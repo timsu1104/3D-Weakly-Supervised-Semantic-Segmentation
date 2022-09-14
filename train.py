@@ -6,15 +6,18 @@
 
 
 import os
-import torch, data, iou
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import sparseconvnet as scn
 import time
 
-from models import TextTransformer
+from dataset.data import dimension, full_scale, train_data_loader, val_data_loader, train, val, valOffsets, valLabels
+import models # register the classes
+from utils import iou
 from utils.config import cfg
+from utils.registry import MODEL_REGISTRY
 
 TRAIN_NAME = cfg.training_name
 
@@ -35,14 +38,8 @@ class Model(nn.Module):
         context_length = text_config.context_length
         layers = text_config.layers
 
-        self.sparseModel = scn.Sequential(
-            scn.InputLayer(data.dimension,data.full_scale, mode=4),
-            scn.SubmanifoldConvolution(data.dimension, 3, m, 3, False),
-            scn.UNet(data.dimension, block_reps, [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], residual_blocks),
-            scn.BatchNormReLU(m),
-            scn.OutputLayer(data.dimension)
-        )
-        self.text_encoder = TextTransformer(context_length, width, layers, vocab_size)
+        self.pc_encoder = MODEL_REGISTRY.get(pc_config.name)(m, dimension, full_scale, block_reps, residual_blocks)
+        self.text_encoder = MODEL_REGISTRY.get(text_config.name)(context_length, width, layers, vocab_size)
         self.text_linear = nn.Linear(width, m)
         self.linear = nn.Linear(m, 20)
     def forward(self, x, istrain=False):
@@ -53,7 +50,7 @@ class Model(nn.Module):
             text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
             text_feats = self.text_linear(text_feats)
 
-            out_feats = self.sparseModel(x[:-1]) # B, NumPts, C
+            out_feats = self.pc_encoder(x[:-1]) # B, NumPts, C
 
             batch_offsets = x[-1]
             B = batch_offsets.size(0) - 1
@@ -65,7 +62,7 @@ class Model(nn.Module):
             
             global_logits = (global_logits, global_feats, text_feats, has_text)
         else:
-            out_feats = self.sparseModel(x) 
+            out_feats = self.pc_encoder(x) 
             global_logits=self.linear(out_feats)
 
         return global_logits
@@ -100,7 +97,7 @@ for epoch in range(training_epoch, training_epochs+1):
     start = time.time()
     train_loss = 0
     print("Inference started.")
-    for i, batch in enumerate(data.train_data_loader):
+    for i, batch in enumerate(train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
             batch['x'][1] = batch['x'][1].cuda()
@@ -115,10 +112,10 @@ for epoch in range(training_epoch, training_epochs+1):
         optimizer.step()
     print(
         epoch,
-        'Train loss',train_loss/(i+1), 
-        'MegaMulAdd',scn.forward_pass_multiplyAdd_count/len(data.train)/1e6, 
-        'MegaHidden',scn.forward_pass_hidden_states/len(data.train)/1e6,
-        'time',time.time() - start,'s'
+        'Train loss', train_loss/(i+1), 
+        'MegaMulAdd', scn.forward_pass_multiplyAdd_count/len(train)/1e6, 
+        'MegaHidden', scn.forward_pass_hidden_states/len(train)/1e6,
+        'time', time.time() - start, 's'
         )
     scn.checkpoint_save(unet,exp_name,'unet',epoch, use_cuda)
     print("Checkpoint saved.")
@@ -126,12 +123,12 @@ for epoch in range(training_epoch, training_epochs+1):
     if scn.is_power2(epoch):
         with torch.no_grad():
             unet.eval()
-            store=torch.zeros(data.valOffsets[-1],20)
+            store=torch.zeros(valOffsets[-1],20)
             scn.forward_pass_multiplyAdd_count=0
             scn.forward_pass_hidden_states=0
             start = time.time()
-            for rep in range(1,1+data.val_reps):
-                for i,batch in enumerate(data.val_data_loader):
+            for rep in range(1,1+cfg.pointcloud_data.val_reps):
+                for i,batch in enumerate(val_data_loader):
                     if use_cuda:
                         batch['x'][1]=batch['x'][1].cuda()
                         batch['y_orig']=batch['y_orig'].cuda()
@@ -140,9 +137,8 @@ for epoch in range(training_epoch, training_epochs+1):
                 print(
                     epoch,
                     rep,
-                    'Val MegaMulAdd=', scn.forward_pass_multiplyAdd_count/len(data.val)/1e6, 
-                    'MegaHidden', scn.forward_pass_hidden_states/len(data.val)/1e6,
-                    'time',time.time() - start,
-                    's'
+                    'Val MegaMulAdd=', scn.forward_pass_multiplyAdd_count/len(val)/1e6, 
+                    'MegaHidden', scn.forward_pass_hidden_states/len(val)/1e6,
+                    'time', time.time() - start, 's'
                     )
-                iou.evaluate(store.max(1)[1].numpy(),data.valLabels)
+                iou.evaluate(store.max(1)[1].numpy(),valLabels)
