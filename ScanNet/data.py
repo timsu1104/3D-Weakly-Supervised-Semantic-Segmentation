@@ -17,7 +17,7 @@ NUM_CLASSES = 20
 
 import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time, json
 
-from utils.Tokenizer import text_transform
+from utils.text_transform_builder import text_transform
 tokenize = text_transform(max_seq_len, cropped_texts)
 
 dimension=3
