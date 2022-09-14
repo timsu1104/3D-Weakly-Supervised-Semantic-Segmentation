@@ -7,12 +7,18 @@
 # Options
 scale=20  #Voxel size = 1/scale - 5cm
 val_reps=1 # Number of test views, 1 or more
-batch_size=8
+batch_size=32
 elastic_deformation=False
+
+max_seq_len = 120
+cropped_texts = 10
 
 NUM_CLASSES = 20
 
-import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time
+import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time, json
+
+from utils.Tokenizer import text_transform
+tokenize = text_transform(max_seq_len, cropped_texts)
 
 dimension=3
 full_scale=4096 #Input field size
@@ -20,10 +26,11 @@ full_scale=4096 #Input field size
 # Class IDs have been mapped to the range {0,1,...,19}
 # NYU_CLASS_IDS = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39])
 
-train,val=[],[]
+train = []
+val = []
 for x in torch.utils.data.DataLoader(
         glob.glob('train_processed/*.pth'),
-        collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
+        collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count()):
     train.append(x)
 for x in torch.utils.data.DataLoader(
         glob.glob('val_processed/*.pth'),
@@ -57,9 +64,12 @@ def trainMerge(tbl):
     labels=[]
     scene_labels = []
     batch_offsets = [0]
+    has_text = []
+    texts = []
 
     for idx,i in enumerate(tbl):
-        a,b,c=train[i] # a - coords, b - colors, c - label
+        pc, text = train[i]
+        a, b, c = pc # a - coords, b - colors, c - label
 
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
@@ -87,6 +97,11 @@ def trainMerge(tbl):
         scene_label = np.zeros(NUM_CLASSES)
         scene_label[scene_label_inds] = 1.
 
+        if len(text) > 0:
+            has_text.append(idx)
+            text = tokenize(text)
+            texts.append(text)
+
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c))
@@ -98,7 +113,15 @@ def trainMerge(tbl):
     labels = torch.cat(labels, 0) # B, N
     batch_offsets = torch.tensor(batch_offsets) # B, 
     scene_labels = torch.stack(scene_labels) # B, NumClasses
-    return {'x': [locs, feats, batch_offsets], 'y_orig': labels.long(), 'y': scene_labels, 'id': tbl}
+    texts = torch.stack(texts) # B, NumText, LenSeq
+    has_text = torch.tensor(has_text).long()
+    return {
+        'x': [locs, feats, batch_offsets], 
+        'y_orig': labels.long(), 
+        'y': scene_labels, 
+        'text': [texts, has_text],
+        'id': tbl
+        }
 train_data_loader = torch.utils.data.DataLoader(
     list(range(len(train))),
     batch_size=batch_size,

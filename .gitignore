@@ -160,7 +160,6 @@ cython_debug/
 .DS_Store
 
 # 3d_dataset/
-**.json
 **/train
 **/val
 **/exp

@@ -5,9 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 # Options
+# unet
 m = 16 # 16 or 32
 residual_blocks=False #True or False
 block_reps = 1 #Conv block repetition factor: 1 or 2
+
+# text encoder
+width = 256
+vocab_size = 49408
+context_length = 120
+layers = 12
+
+max_seq_len = 120
+cropped_texts = 10
 
 import os
 import torch, data, iou
@@ -17,7 +27,9 @@ import torch.optim as optim
 import sparseconvnet as scn
 import time
 
-TRAIN_NAME = 'scene_level_baseline'
+from models import TextTransformer
+
+TRAIN_NAME = 'scene_level_with_text'
 
 use_cuda = torch.cuda.is_available()
 if not os.path.exists('exp'):
@@ -36,29 +48,45 @@ class Model(nn.Module):
             scn.BatchNormReLU(m),
             scn.OutputLayer(data.dimension)
         )
+        self.text_encoder = TextTransformer(context_length, width, layers, vocab_size)
+        self.text_linear = nn.Linear(width, m)
         self.linear = nn.Linear(m, 20)
     def forward(self, x, istrain=False):
         if istrain:
+            x, (text, has_text) = x
+
+            BText, NumText, Length = text.size()
+            text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
+            text_feats = self.text_linear(text_feats)
+
             out_feats = self.sparseModel(x[:-1]) # B, NumPts, C
-            # print("OUT_FEATS", out_feats)
 
             batch_offsets = x[-1]
-            # print("BATCH_OFF", batch_offsets)
             B = batch_offsets.size(0) - 1
             global_feats = []
             for idx in range(B):
-                # print("SPLIT", batch_offsets[idx], batch_offsets[idx+1])
                 global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
             global_feats = torch.stack(global_feats)
-            # print("GLOBAL_FEATS", global_feats)
-            assert global_feats.size(0) == B, f"{global_feats.size(0)}"
             global_logits=self.linear(global_feats) # B, 20
-            # print("GLOBAL_LOGITS", global_logits)
+            
+            global_logits = (global_logits, global_feats, text_feats, has_text)
         else:
             out_feats = self.sparseModel(x) 
             global_logits=self.linear(out_feats)
 
         return global_logits
+
+def contrastive_loss(pc: torch.Tensor, text: torch.Tensor, has_text):
+    """
+    pc: B, m
+    text: B', num_text, m
+    """
+    assert text.ndim == 3, text.size()
+    similarity = text @ pc.T # B', num_text, B
+    Bt, num_text, B = similarity.size()
+    labels = torch.tile(has_text[:, None], (1, num_text))
+    contrast_loss = F.cross_entropy(similarity.transpose(1, 2), labels)
+    return contrast_loss
 
 unet=Model()
 if use_cuda:
@@ -82,12 +110,11 @@ for epoch in range(training_epoch, training_epochs+1):
         if use_cuda:
             batch['x'][1] = batch['x'][1].cuda()
             batch['x'][2] = batch['x'][2].cuda()
+            batch['text'][0] = batch['text'][0].cuda()
+            batch['text'][1] = batch['text'][1].cuda()
             batch['y'] = batch['y'].cuda()
-        predictions = unet(batch['x'], istrain=True)
-        # print(predictions.size())
-        # print(batch['y'].size())
-        # print("target", batch['y'])
-        loss = F.multilabel_soft_margin_loss(predictions, batch['y'])
+        global_logits, global_feats, text_feats, has_text = unet((batch['x'], batch['text']), istrain=True)
+        loss = F.multilabel_soft_margin_loss(global_logits, batch['y']) + contrastive_loss(global_feats, text_feats, has_text)
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
