@@ -4,20 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Options
-# unet
-m = 16 # 16 or 32
-residual_blocks=False #True or False
-block_reps = 1 #Conv block repetition factor: 1 or 2
-
-# text encoder
-width = 256
-vocab_size = 49408
-context_length = 120
-layers = 12
-
-max_seq_len = 120
-cropped_texts = 10
 
 import os
 import torch, data, iou
@@ -28,19 +14,27 @@ import sparseconvnet as scn
 import time
 
 from models import TextTransformer
+from utils.config import cfg
 
-TRAIN_NAME = 'scene_level_with_text'
+TRAIN_NAME = cfg.training_name
 
 use_cuda = torch.cuda.is_available()
-if not os.path.exists('exp'):
-    os.makedirs('exp')
-if not os.path.exists(os.path.join('exp', TRAIN_NAME)):
-    os.makedirs(os.path.join('exp', TRAIN_NAME))
-exp_name=os.path.join('exp', TRAIN_NAME, TRAIN_NAME)
+os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)
+exp_name=cfg.exp_path
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, pc_config, text_config):
         super().__init__()
+
+        m = pc_config.m
+        residual_blocks=pc_config.residual_blocks
+        block_reps = pc_config.block_reps
+
+        width = text_config.width
+        vocab_size = text_config.vocab_size
+        context_length = text_config.context_length
+        layers = text_config.layers
+
         self.sparseModel = scn.Sequential(
             scn.InputLayer(data.dimension,data.full_scale, mode=4),
             scn.SubmanifoldConvolution(data.dimension, 3, m, 3, False),
@@ -83,12 +77,12 @@ def contrastive_loss(pc: torch.Tensor, text: torch.Tensor, has_text):
     """
     assert text.ndim == 3, text.size()
     similarity = text @ pc.T # B', num_text, B
-    Bt, num_text, B = similarity.size()
+    num_text = similarity.size(1)
     labels = torch.tile(has_text[:, None], (1, num_text))
     contrast_loss = F.cross_entropy(similarity.transpose(1, 2), labels)
     return contrast_loss
 
-unet=Model()
+unet=Model(cfg.pointcloud_model, cfg.text_model)
 if use_cuda:
     unet=unet.cuda()
 
@@ -98,13 +92,14 @@ optimizer = optim.Adam(unet.parameters())
 print('#classifier parameters', sum([x.nelement() for x in unet.parameters()]))
 
 for epoch in range(training_epoch, training_epochs+1):
+    print("Starting epoch", epoch)
     unet.train()
     stats = {}
     scn.forward_pass_multiplyAdd_count=0
     scn.forward_pass_hidden_states=0
     start = time.time()
     train_loss = 0
-    # criterion = nn.MultiLabelSoftMarginLoss() #nn.BCEWithLogitsLoss()
+    print("Inference started.")
     for i, batch in enumerate(data.train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
@@ -126,6 +121,7 @@ for epoch in range(training_epoch, training_epochs+1):
         'time',time.time() - start,'s'
         )
     scn.checkpoint_save(unet,exp_name,'unet',epoch, use_cuda)
+    print("Checkpoint saved.")
 
     if scn.is_power2(epoch):
         with torch.no_grad():

@@ -4,20 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Options
-scale=20  #Voxel size = 1/scale - 5cm
-val_reps=1 # Number of test views, 1 or more
-batch_size=32
-elastic_deformation=False
-
-max_seq_len = 120
-cropped_texts = 10
-
 NUM_CLASSES = 20
 
 import torch, numpy as np, glob, math, torch.utils.data, scipy.ndimage, multiprocessing as mp, time, json
-
 from utils.text_transform_builder import text_transform
+from utils.config import cfg
+
+scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
+val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
+batch_size=cfg.pointcloud_data.batch_size
+elastic_deformation=cfg.pointcloud_data.elastic_deformation
+
+max_seq_len = cfg.text_data.max_seq_len
+cropped_texts = cfg.text_data.cropped_texts
+
 tokenize = text_transform(max_seq_len, cropped_texts)
 
 dimension=3

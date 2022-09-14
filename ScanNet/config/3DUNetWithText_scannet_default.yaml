@@ -1,0 +1,23 @@
+GENERAL:
+  training_name: scene_level_with_text
+
+DATA:
+  pointcloud_data:
+    scale: 20 #Voxel size: 1/scale - 5cm
+    val_reps: 1 # Number of test views, 1 or more
+    batch_size: 16
+    elastic_deformation: False
+  text_data:
+    max_seq_len: 120
+    cropped_texts: 10
+
+STRUCTURE:
+  pointcloud_model:
+    m: 16 # 16 or 32
+    residual_blocks: False #True or False
+    block_reps: 1 #Conv block repetition factor: 1 or 2
+  text_model:
+    width: 256
+    vocab_size: 49408
+    context_length: 120
+    layers: 12
