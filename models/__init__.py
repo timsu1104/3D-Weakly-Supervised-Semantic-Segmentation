@@ -1,2 +1,1 @@
-from .Transformer import TextTransformer
-from .SparseConvNet import SparseConvNet
+from . import Transformer, SparseConvNet, MultiLabelContrastive

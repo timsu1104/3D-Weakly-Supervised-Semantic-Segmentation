@@ -1,10 +1,10 @@
 GENERAL:
-  training_name: scene_level_with_text_refactored
+  training_name: scene_level_baseline_finer
   model_name: MultiLabelContrastive
 
 DATA:
   pointcloud_data:
-    scale: 20 #Voxel size: 1/scale - 5cm
+    scale: 50 #Voxel size: 1/scale - 5cm
     val_reps: 1 # Number of test views, 1 or more
     batch_size: 16
     elastic_deformation: False
@@ -16,17 +16,17 @@ STRUCTURE:
   pointcloud_model:
     name: SparseConvNet
     m: 16 # 16 or 32
-    residual_blocks: False #True or False
-    block_reps: 1 #Conv block repetition factor: 1 or 2
+    residual_blocks: True #True or False
+    block_reps: 2 #Conv block repetition factor: 1 or 2
   text_model:
     name: TextTransformer
     width: 256
     vocab_size: 49408
     context_length: 120
-    layers: 12
+    layers: 9
   loss: 
     Classification: True
-    TextContrastive: True
+    TextContrastive: False
 
 Training:
   epochs: 512

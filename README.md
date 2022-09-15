@@ -1,3 +1,4 @@
+# Training Procedure
 To train a small U-Net with 5cm-cubed sparse voxels:
 1. Follow the instructions to prepare data. 
 2. Run 'python train.py > train_scene_level_with_text_cont1.log 2>&1 &' to train the network.
@@ -11,3 +12,8 @@ scale: 50 # 1/50 m :  2cm voxels
 val_reps: 3 # Multiple views at test time
 batch_size: 5 # Fit in 16GB of GPU memory
 ```
+
+# Switch Backbone
+Register your module under ```models/```. Then switch the backbone name in the config. 
+
+Note that the input should be [coords, feats] and the output should be logits for every points. For details, please refer to the docstring of ```models/SparseConvNet.py```. 
