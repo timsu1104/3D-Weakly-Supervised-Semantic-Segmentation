@@ -50,3 +50,4 @@ def evaluate(pred_ids,gt_ids):
         label_name = CLASS_LABELS[i]
         print('{0:<14s}: {1:>5.3f}   ({2:>6d}/{3:<6d})'.format(label_name, class_ious[label_name][0], class_ious[label_name][1], class_ious[label_name][2]))
     print('mean IOU', mean_iou)
+    return mean_iou

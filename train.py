@@ -8,10 +8,10 @@ import os
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 import sparseconvnet as scn
 import time
 import warnings
-warnings.filterwarnings("ignore")
 
 from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 import models # register the classes
@@ -19,13 +19,17 @@ from utils import iou, loss
 from utils.config import cfg
 from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 
+# Setups
+warnings.filterwarnings("ignore")
 TRAIN_NAME = cfg.training_name
 
 use_cuda = torch.cuda.is_available()
 os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)
 exp_name=cfg.exp_path
+writer = SummaryWriter(os.path.join('exp', TRAIN_NAME))
 
-model=MODEL_REGISTRY.get(cfg.model_name)(cfg.pointcloud_model, cfg.text_model)
+model_, model_meta = MODEL_REGISTRY.get(cfg.model_name)
+model = model_(cfg.pointcloud_model, cfg.text_model)
 if use_cuda:
     model=model.cuda()
 
@@ -55,9 +59,11 @@ for epoch in range(training_epoch, training_epochs+1):
         
         global_logits, global_feats, text_feats, has_text = model((batch['x'], batch['text']), istrain=True)
         if cfg.loss.Classification:
-            loss += LOSS_REGISTRY.get('Classification')(global_logits, batch['y'])
+            cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
+            loss += cls_loss(global_logits, batch['y'])
         if cfg.loss.TextContrastive: 
-            loss += LOSS_REGISTRY.get('TextContrastive')(global_feats, text_feats, has_text)
+            contrastive_loss, contrastive_meta = LOSS_REGISTRY.get('TextContrastive')
+            loss += contrastive_loss(global_feats, text_feats, has_text)
             
         train_loss += loss.item()
         loss.backward()
@@ -69,6 +75,7 @@ for epoch in range(training_epoch, training_epochs+1):
         'MegaHidden', scn.forward_pass_hidden_states/len(train)/1e6,
         'time', time.time() - start, 's'
         )
+    writer.add_scalar("Train Loss", train_loss/(i+1), epoch)
     scn.checkpoint_save(model,exp_name,'model',epoch, use_cuda)
     print("Checkpoint saved.")
 
@@ -93,4 +100,7 @@ for epoch in range(training_epoch, training_epochs+1):
                     'MegaHidden', scn.forward_pass_hidden_states/len(val)/1e6,
                     'time', time.time() - start, 's'
                     )
-                iou.evaluate(store.max(1)[1].numpy(),valLabels)
+                mean_iou = iou.evaluate(store.max(1)[1].numpy(),valLabels)
+                writer.add_scalar("Validation accuracy", mean_iou, epoch)
+
+writer.close()

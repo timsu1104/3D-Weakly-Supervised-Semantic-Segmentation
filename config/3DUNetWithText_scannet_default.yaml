@@ -1,5 +1,5 @@
 GENERAL:
-  training_name: scene_level_with_text_refactored
+  training_name: scene_level_with_text
   model_name: MultiLabelContrastive
 
 DATA:

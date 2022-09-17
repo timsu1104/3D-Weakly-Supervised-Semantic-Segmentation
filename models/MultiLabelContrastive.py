@@ -18,10 +18,14 @@ class MultiLabelContrastive(nn.Module):
         context_length = text_config.context_length
         layers = text_config.layers
 
-        self.pc_encoder = MODEL_REGISTRY.get(pc_config.name)(m, dimension, full_scale, block_reps, residual_blocks)
-        self.text_encoder = MODEL_REGISTRY.get(text_config.name)(context_length, width, layers, vocab_size)
-        self.text_linear = nn.Linear(width, 7 * (7+1) * m // 2)
-        self.linear = nn.Linear(7 * (7+1) * m // 2, 20)
+        pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
+        text_model, text_meta = MODEL_REGISTRY.get(text_config.name)
+        embed_width = pc_meta.get('embed_length')(m)
+
+        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
+        self.text_encoder = text_model(context_length, width, layers, vocab_size)
+        self.text_linear = nn.Linear(width, embed_width)
+        self.linear = nn.Linear(embed_width, 20)
     def forward(self, x, istrain=False):
         if istrain:
             (coords, feats, batch_offsets), (text, has_text) = x

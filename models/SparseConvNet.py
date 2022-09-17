@@ -5,7 +5,7 @@ import sparseconvnet as scn
 
 from utils.registry import MODEL_REGISTRY
 
-@MODEL_REGISTRY.register()
+@MODEL_REGISTRY.register(embed_length=lambda m: m)
 class SparseConvUNet(nn.Module):
     def __init__(self, m, dimension, full_scale, block_reps, residual_blocks):
         super().__init__()
@@ -101,24 +101,20 @@ def FullyConvolutionalNetEncoder(dimension, reps, nPlanes, residual_blocks=False
     m = U(nPlanes)
     return m
 
-@MODEL_REGISTRY.register()
+@MODEL_REGISTRY.register(embed_length=lambda m: 7 * (7+1) * m // 2)
 class SparseConvFCNet(nn.Module):
-    def __init__(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7, MP_freq:int=3):
+    def __init__(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7):
         super().__init__()
-        ratio = 2 ** depth
         self.encoder = scn.Sequential(
             scn.InputLayer(dimension, full_scale, mode=4),
             scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
-            # FullyConvolutionalNetEncoder(
             scn.FullyConvolutionalNet(
                 dimension, 
                 block_reps, 
                 [(i+1) * m for i in range(depth)], 
                 residual_blocks,
-                # MP_freq=MP_freq
                 ),
             scn.BatchNormReLU(depth * (depth+1) * m // 2),
-            # scn.UnPooling(dimension, ratio, ratio),
             scn.OutputLayer(dimension)
         )
     def forward(self, x: List[torch.Tensor]):

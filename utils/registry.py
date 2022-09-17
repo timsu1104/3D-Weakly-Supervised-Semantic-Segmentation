@@ -28,15 +28,15 @@ class Registry():
         self._name = name
         self._obj_map = {}
 
-    def _do_register(self, name, obj, suffix=None):
+    def _do_register(self, name, obj, suffix=None, **kwarg):
         if isinstance(suffix, str):
             name = name + '_' + suffix
 
         assert (name not in self._obj_map), (f"An object named '{name}' was already registered "
                                              f"in '{self._name}' registry!")
-        self._obj_map[name] = obj
+        self._obj_map[name] = (obj, kwarg)
 
-    def register(self, obj=None, suffix=None):
+    def register(self, obj=None, suffix=None, **kwarg):
         """
         Register the given object under the the name `obj.__name__`.
         Can be used as either a decorator or not.
@@ -46,7 +46,7 @@ class Registry():
             # used as a decorator
             def deco(func_or_class):
                 name = func_or_class.__name__
-                self._do_register(name, func_or_class, suffix)
+                self._do_register(name, func_or_class, suffix, **kwarg)
                 return func_or_class
 
             return deco
