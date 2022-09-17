@@ -8,6 +8,8 @@ def TextContrastive(pc: torch.Tensor, text: torch.Tensor, has_text):
     pc: B, m
     text: B', num_text, m
     """
+    if has_text.size(0) == 0:
+        return 0
     assert text.ndim == 3, text.size()
     similarity = text @ pc.T # B', num_text, B
     num_text = similarity.size(1)

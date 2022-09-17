@@ -20,20 +20,25 @@ class MultiLabelContrastive(nn.Module):
 
         self.pc_encoder = MODEL_REGISTRY.get(pc_config.name)(m, dimension, full_scale, block_reps, residual_blocks)
         self.text_encoder = MODEL_REGISTRY.get(text_config.name)(context_length, width, layers, vocab_size)
-        self.text_linear = nn.Linear(width, m)
-        self.linear = nn.Linear(m, 20)
+        self.text_linear = nn.Linear(width, 7 * (7+1) * m // 2)
+        self.linear = nn.Linear(7 * (7+1) * m // 2, 20)
     def forward(self, x, istrain=False):
         if istrain:
-            x, (text, has_text) = x
+            (coords, feats, batch_offsets), (text, has_text) = x
 
-            BText, NumText, Length = text.size()
-            text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
-            text_feats = self.text_linear(text_feats)
+            if has_text.size(0) > 0:
+                BText, NumText, Length = text.size()
+                text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
+                text_feats = self.text_linear(text_feats)
+            else:
+                text_feats = -1
 
-            out_feats = self.pc_encoder(x[:-1]) # B, NumPts, C
+            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+            # print(out_feats.size())
 
-            batch_offsets = x[-1]
-            B = batch_offsets.size(0) - 1
+            # batch_offsets = x[-1]
+            # print(batch_offsets)
+            B = len(batch_offsets) - 1
             global_feats = []
             for idx in range(B):
                 global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))

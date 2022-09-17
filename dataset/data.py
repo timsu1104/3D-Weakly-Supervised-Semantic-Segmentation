@@ -117,9 +117,8 @@ def trainMerge(tbl):
     locs = torch.cat(locs, 0)
     feats = torch.cat(feats, 0)
     labels = torch.cat(labels, 0) # B, N
-    batch_offsets = torch.tensor(batch_offsets) # B, 
     scene_labels = torch.stack(scene_labels) # B, NumClasses
-    texts = torch.stack(texts) # B, NumText, LenSeq
+    texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
     has_text = torch.tensor(has_text).long()
     return {
         'x': [locs, feats, batch_offsets], 

@@ -14,7 +14,7 @@ DATA:
 
 STRUCTURE:
   pointcloud_model:
-    name: SparseConvNet
+    name: SparseConvUNet
     m: 16 # 16 or 32
     residual_blocks: True #True or False
     block_reps: 2 #Conv block repetition factor: 1 or 2

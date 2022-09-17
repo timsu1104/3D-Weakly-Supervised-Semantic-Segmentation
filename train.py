@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import sparseconvnet as scn
 import time
+import warnings
+warnings.filterwarnings("ignore")
 
 from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 import models # register the classes
@@ -45,13 +47,13 @@ for epoch in range(training_epoch, training_epochs+1):
         optimizer.zero_grad()
         if use_cuda:
             batch['x'][1] = batch['x'][1].cuda()
-            batch['x'][2] = batch['x'][2].cuda()
             batch['text'][0] = batch['text'][0].cuda()
             batch['text'][1] = batch['text'][1].cuda()
             batch['y'] = batch['y'].cuda()
-        global_logits, global_feats, text_feats, has_text = model((batch['x'], batch['text']), istrain=True)
 
         loss = 0
+        
+        global_logits, global_feats, text_feats, has_text = model((batch['x'], batch['text']), istrain=True)
         if cfg.loss.Classification:
             loss += LOSS_REGISTRY.get('Classification')(global_logits, batch['y'])
         if cfg.loss.TextContrastive: 
