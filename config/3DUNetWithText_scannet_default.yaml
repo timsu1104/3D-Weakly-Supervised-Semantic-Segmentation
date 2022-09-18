@@ -8,6 +8,7 @@ DATA:
     val_reps: 1 # Number of test views, 1 or more
     batch_size: 16
     elastic_deformation: False
+  has_text: True
   text_data:
     max_seq_len: 120
     cropped_texts: 10

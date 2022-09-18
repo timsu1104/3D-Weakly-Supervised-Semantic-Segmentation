@@ -6,7 +6,6 @@
 
 import os
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import sparseconvnet as scn
@@ -21,6 +20,7 @@ from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 
 # Setups
 warnings.filterwarnings("ignore")
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 TRAIN_NAME = cfg.training_name
 
 use_cuda = torch.cuda.is_available()
@@ -29,7 +29,7 @@ exp_name=cfg.exp_path
 writer = SummaryWriter(os.path.join('exp', TRAIN_NAME))
 
 model_, model_meta = MODEL_REGISTRY.get(cfg.model_name)
-model = model_(cfg.pointcloud_model, cfg.text_model)
+model = model_(cfg.pointcloud_model, cfg.text_model) if cfg.has_text else model_(cfg.pointcloud_model)
 if use_cuda:
     model=model.cuda()
 
@@ -57,13 +57,13 @@ for epoch in range(training_epoch, training_epochs+1):
 
         loss = 0
         
-        global_logits, global_feats, text_feats, has_text = model((batch['x'], batch['text']), istrain=True)
+        global_logits, contrastive_meta = model((batch['x'], batch['text']), istrain=True)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
-        if cfg.loss.TextContrastive: 
+        if cfg.has_text and cfg.loss.TextContrastive: 
             contrastive_loss, contrastive_meta = LOSS_REGISTRY.get('TextContrastive')
-            loss += contrastive_loss(global_feats, text_feats, has_text)
+            loss += contrastive_loss(*contrastive_meta)
             
         train_loss += loss.item()
         loss.backward()

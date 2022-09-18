@@ -47,62 +47,62 @@ class SparseConvUNet(SparseConvBase_):
             scn.OutputLayer(dimension)
         )
 
-def FullyConvolutionalNetEncoder(dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2], MP_freq=3):
-    """
-    Fully-convolutional style network without concatenation with VGG or ResNet-style blocks.
-    """
-    def block(m, a, b):
-        if residual_blocks: #ResNet style blocks
-            m.add(scn.ConcatTable()
-                  .add(scn.Identity() if a == b else scn.NetworkInNetwork(a, b, False))
-                  .add(scn.Sequential()
-                    .add(scn.BatchNormReLU(a))
-                    .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False))
-                    .add(scn.BatchNormReLU(b))
-                    .add(scn.SubmanifoldConvolution(dimension, b, b, 3, False)))
-             ).add(scn.AddTable())
-        else: #VGG style blocks
-            m.add(scn.Sequential()
-                 .add(scn.BatchNormReLU(a))
-                 .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False)))
-
-    def BatchNormWithMaybeMP(channels, MP_count):
-        if MP_count:
-            return scn.Sequential(
-                scn.BatchNormReLU(channels),
-                scn.MaxPooling(dimension, 2, 2)
-            )
-        else:
-            return scn.BatchNormReLU(channels)
-
-    def U(nPlanes, MP_count:int=0): #Recursive function
-        m = scn.Sequential()
-        if len(nPlanes) == 1:
-            for _ in range(reps):
-                block(m, nPlanes[0], nPlanes[0])
-        else:
-            m = scn.Sequential()
-            for _ in range(reps):
-                block(m, nPlanes[0], nPlanes[0])
-            m.add(
-                scn.Sequential(
-                    scn.BatchNormReLU(nPlanes[0]),
-                    scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False),
-                    U(nPlanes[1:]),
-                    # scn.UnPooling(dimension, downsample[0], downsample[1])
-                )
-            )
-        return m
-    m = U(nPlanes)
-    return m
-
 @MODEL_REGISTRY.register(embed_length=lambda m: 7 * m)
 class SparseConvFCNetEncoder(SparseConvBase_):
+    def FullyConvolutionalNetEncoder(self, dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2], MP_freq=3):
+        """
+        Fully-convolutional style network without concatenation with VGG or ResNet-style blocks.
+        """
+        def block(m, a, b):
+            if residual_blocks: #ResNet style blocks
+                m.add(scn.ConcatTable()
+                    .add(scn.Identity() if a == b else scn.NetworkInNetwork(a, b, False))
+                    .add(scn.Sequential()
+                        .add(scn.BatchNormReLU(a))
+                        .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False))
+                        .add(scn.BatchNormReLU(b))
+                        .add(scn.SubmanifoldConvolution(dimension, b, b, 3, False)))
+                ).add(scn.AddTable())
+            else: #VGG style blocks
+                m.add(scn.Sequential()
+                    .add(scn.BatchNormReLU(a))
+                    .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False)))
+
+        def BatchNormWithMaybeMP(channels, MP_count):
+            if MP_count:
+                return scn.Sequential(
+                    scn.BatchNormReLU(channels),
+                    scn.MaxPooling(dimension, 2, 2)
+                )
+            else:
+                return scn.BatchNormReLU(channels)
+
+        def U(nPlanes, MP_count:int=0): #Recursive function
+            m = scn.Sequential()
+            if len(nPlanes) == 1:
+                for _ in range(reps):
+                    block(m, nPlanes[0], nPlanes[0])
+            else:
+                m = scn.Sequential()
+                for _ in range(reps):
+                    block(m, nPlanes[0], nPlanes[0])
+                m.add(
+                    scn.Sequential(
+                        scn.BatchNormReLU(nPlanes[0]),
+                        scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False),
+                        U(nPlanes[1:]),
+                        # scn.UnPooling(dimension, downsample[0], downsample[1])
+                    )
+                )
+            return m
+        m = U(nPlanes)
+        return m
+
     def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7, downsample=[2, 2]):
         return scn.Sequential(
             scn.InputLayer(dimension, full_scale, mode=4),
             scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
-            FullyConvolutionalNetEncoder(
+            self.FullyConvolutionalNetEncoder(
                 dimension, 
                 block_reps, 
                 [(i+1) * m for i in range(depth)], 

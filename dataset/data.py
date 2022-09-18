@@ -21,10 +21,12 @@ val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
 batch_size=cfg.pointcloud_data.batch_size
 elastic_deformation=cfg.pointcloud_data.elastic_deformation
 
-max_seq_len = cfg.text_data.max_seq_len
-cropped_texts = cfg.text_data.cropped_texts
+text_flag = cfg.has_text
+if text_flag:
+    max_seq_len = cfg.text_data.max_seq_len
+    cropped_texts = cfg.text_data.cropped_texts
 
-tokenize = text_transform(max_seq_len, cropped_texts)
+    tokenize = text_transform(max_seq_len, cropped_texts)
 
 dimension=3
 full_scale=4096 #Input field size
@@ -34,10 +36,16 @@ full_scale=4096 #Input field size
 
 train = []
 val = []
-for x in torch.utils.data.DataLoader(
-        glob.glob('dataset/ScanNet/train_processed/*.pth'),
-        collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count()):
-    train.append(x)
+if text_flag:
+    for x in torch.utils.data.DataLoader(
+            glob.glob('dataset/ScanNet/train_processed/*.pth'),
+            collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count()):
+        train.append(x)
+else:
+    for x in torch.utils.data.DataLoader(
+            glob.glob('dataset/ScanNet/train_processed/*.pth'),
+            collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
+        train.append(x)
 for x in torch.utils.data.DataLoader(
         glob.glob('dataset/ScanNet/val_processed/*.pth'),
         collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
@@ -74,7 +82,11 @@ def trainMerge(tbl):
     texts = []
 
     for idx,i in enumerate(tbl):
-        pc, text = train[i]
+        if text_flag:
+            pc, text = train[i]
+        else:
+            pc = train[i]
+            text = []
         a, b, c = pc # a - coords, b - colors, c - label
 
         m=np.eye(3)+np.random.randn(3,3)*0.1

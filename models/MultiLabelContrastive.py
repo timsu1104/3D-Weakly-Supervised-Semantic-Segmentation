@@ -20,7 +20,7 @@ class MultiLabelContrastive(nn.Module):
 
         pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
         text_model, text_meta = MODEL_REGISTRY.get(text_config.name)
-        embed_width = pc_meta.get('embed_length')(m)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
 
         self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
         self.text_encoder = text_model(context_length, width, layers, vocab_size)
@@ -49,7 +49,7 @@ class MultiLabelContrastive(nn.Module):
             global_feats = torch.stack(global_feats)
             global_logits=self.linear(global_feats) # B, 20
             
-            global_logits = (global_logits, global_feats, text_feats, has_text)
+            global_logits = global_logits, (global_feats, text_feats, has_text)
         else:
             out_feats = self.pc_encoder(x) 
             global_logits=self.linear(out_feats)
@@ -66,11 +66,28 @@ class MultiLabel(nn.Module):
         residual_blocks=pc_config.residual_blocks
         block_reps = pc_config.block_reps
 
-        self.pc_encoder = MODEL_REGISTRY.get(pc_config.name)(m, dimension, full_scale, block_reps, residual_blocks)
-        self.linear = nn.Linear(m, 20)
+        pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
 
-    def forward(self, x):
-        out_feats = self.pc_encoder(x) 
-        global_logits=self.linear(out_feats)
+        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
+        self.linear = nn.Linear(embed_width, 20)
+
+    def forward(self, x, istrain=False):
+        if istrain:
+            (coords, feats, batch_offsets), _ = x
+
+            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+
+            B = len(batch_offsets) - 1
+            global_feats = []
+            for idx in range(B):
+                global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
+            global_feats = torch.stack(global_feats)
+            global_logits=self.linear(global_feats) # B, 20
+            
+            global_logits = global_logits, None
+        else:
+            out_feats = self.pc_encoder(x) 
+            global_logits=self.linear(out_feats)
 
         return global_logits
