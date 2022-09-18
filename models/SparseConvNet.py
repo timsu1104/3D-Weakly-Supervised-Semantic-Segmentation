@@ -5,22 +5,13 @@ import sparseconvnet as scn
 
 from utils.registry import MODEL_REGISTRY
 
-@MODEL_REGISTRY.register(embed_length=lambda m: m)
-class SparseConvUNet(nn.Module):
-    def __init__(self, m, dimension, full_scale, block_reps, residual_blocks):
+class SparseConvBase_(nn.Module):
+    def getEncoder(self, *args, **kwarg):
+        return None
+
+    def __init__(self, *args, **kwarg):
         super().__init__()
-        self.encoder = scn.Sequential(
-            scn.InputLayer(dimension, full_scale, mode=4),
-            scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
-            scn.UNet(
-                dimension, 
-                block_reps, 
-                [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], 
-                residual_blocks
-                ),
-            scn.BatchNormReLU(m),
-            scn.OutputLayer(dimension)
-        )
+        self.encoder = self.getEncoder(*args, **kwarg)
     
     def forward(self, x: List[torch.Tensor]):
         """
@@ -40,23 +31,25 @@ class SparseConvUNet(nn.Module):
         out_feats = self.encoder(x)
         return out_feats
 
+@MODEL_REGISTRY.register(embed_length=lambda m: m)
+class SparseConvUNet(SparseConvBase_):
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks):
+        return scn.Sequential(
+            scn.InputLayer(dimension, full_scale, mode=4),
+            scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
+            scn.UNet(
+                dimension, 
+                block_reps, 
+                [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], 
+                residual_blocks
+                ),
+            scn.BatchNormReLU(m),
+            scn.OutputLayer(dimension)
+        )
+
 def FullyConvolutionalNetEncoder(dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2], MP_freq=3):
     """
-    Fully-convolutional style network with VGG or ResNet-style blocks.
-    For voxel level prediction:
-    import sparseconvnet as scn
-    import torch.nn
-    class Model(nn.Module):
-        def __init__(self):
-            nn.Module.__init__(self)
-            self.sparseModel = scn.Sequential().add(
-               scn.SubmanifoldConvolution(3, nInputFeatures, 64, 3, False)).add(
-               scn.FullyConvolutionalNet(3, 2, [64, 128, 192, 256], residual_blocks=True, downsample=[2, 2]))
-            self.linear = nn.Linear(256, nClasses)
-        def forward(self,x):
-            x=self.sparseModel(x).features
-            x=self.linear(x)
-            return x
+    Fully-convolutional style network without concatenation with VGG or ResNet-style blocks.
     """
     def block(m, a, b):
         if residual_blocks: #ResNet style blocks
@@ -91,21 +84,40 @@ def FullyConvolutionalNetEncoder(dimension, reps, nPlanes, residual_blocks=False
             m = scn.Sequential()
             for _ in range(reps):
                 block(m, nPlanes[0], nPlanes[0])
-            m.add(scn.Sequential(
-                        BatchNormWithMaybeMP(nPlanes[0], MP_count=((MP_count+1) % MP_freq == 0)),
-                        scn.BatchNormReLU(nPlanes[0]),
-                        scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False), 
-                        U(nPlanes[1:], MP_count=MP_count+1)
-                    ))
+            m.add(
+                scn.Sequential(
+                    scn.BatchNormReLU(nPlanes[0]),
+                    scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False),
+                    U(nPlanes[1:]),
+                    # scn.UnPooling(dimension, downsample[0], downsample[1])
+                )
+            )
         return m
     m = U(nPlanes)
     return m
 
+@MODEL_REGISTRY.register(embed_length=lambda m: 7 * m)
+class SparseConvFCNetEncoder(SparseConvBase_):
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7, downsample=[2, 2]):
+        return scn.Sequential(
+            scn.InputLayer(dimension, full_scale, mode=4),
+            scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
+            FullyConvolutionalNetEncoder(
+                dimension, 
+                block_reps, 
+                [(i+1) * m for i in range(depth)], 
+                residual_blocks,
+                downsample=downsample
+                ),
+            scn.UnPooling(dimension, downsample[0] ** (depth-1), downsample[1] ** (depth - 1)),
+            scn.BatchNormReLU(depth * m),
+            scn.OutputLayer(dimension)
+        )
+
 @MODEL_REGISTRY.register(embed_length=lambda m: 7 * (7+1) * m // 2)
-class SparseConvFCNet(nn.Module):
-    def __init__(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7):
-        super().__init__()
-        self.encoder = scn.Sequential(
+class SparseConvFCNet(SparseConvBase_):
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7, downsample=[2, 2]):
+        return scn.Sequential(
             scn.InputLayer(dimension, full_scale, mode=4),
             scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
             scn.FullyConvolutionalNet(
@@ -113,24 +125,8 @@ class SparseConvFCNet(nn.Module):
                 block_reps, 
                 [(i+1) * m for i in range(depth)], 
                 residual_blocks,
+                downsample=downsample
                 ),
             scn.BatchNormReLU(depth * (depth+1) * m // 2),
             scn.OutputLayer(dimension)
         )
-    def forward(self, x: List[torch.Tensor]):
-        """
-        Parameters
-        -------------
-        x: [coords, feats], 
-            coords: (B * N, 3)
-            feats: (B * N, C)
-
-        Return
-        -----------
-        out_feats: torch.Tensor, (B * N, m)
-        """
-        coords, feats = x
-        assert coords.size(0) == feats.size(0), f"Coords and feats not aligned! coords's batchsize is {coords.size(0)} while feats' is {feats.size(0)}. "
-
-        out_feats = self.encoder(x)
-        return out_feats

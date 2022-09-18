@@ -131,7 +131,7 @@ train_data_loader = torch.utils.data.DataLoader(
     list(range(len(train))),
     batch_size=batch_size,
     collate_fn=trainMerge,
-    num_workers=20, 
+    num_workers=4, 
     shuffle=True,
     drop_last=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
@@ -192,7 +192,7 @@ val_data_loader = torch.utils.data.DataLoader(
     list(range(len(val))),
     batch_size=batch_size,
     collate_fn=valMerge,
-    num_workers=20,
+    num_workers=4,
     shuffle=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )

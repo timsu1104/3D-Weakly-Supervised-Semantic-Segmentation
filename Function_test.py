@@ -25,11 +25,11 @@ coords *= 4096 # [0, 4096]
 color = 2 * color - 1 # [-1, 1]
 
 # batch_inds = torch.tile(torch.tensor([[0], [1]]), (100000, 1))
-# batch_inds = torch.zeros((coords.size(0), 1))
-# coords = torch.cat([coords, batch_inds], dim=-1)
-coords = torch.repeat_interleave(coords[None, :], 3, dim=0)
-color = torch.repeat_interleave(color[None, :], 3, dim=0)
-print(coords.shape, color.shape)
+batch_inds = torch.zeros((coords.size(0), 1))
+coords = torch.cat([coords, batch_inds], dim=-1)
+# coords = torch.repeat_interleave(coords[None, :], 3, dim=0)
+# color = torch.repeat_interleave(color[None, :], 3, dim=0)
+# print(coords.shape, color.shape)
 
 ### input
 """
@@ -42,16 +42,15 @@ spatial_size: the length of the space (is a cube actually)
 mode: how to deal with duplicates 
 1 means last-occured, 2 means first occured, 3 means sum, 4 means average. 
 """
-input_layer = scn.BLInputLayer(3, 4096, mode=4)
+input_layer = scn.InputLayer(3, 4096, mode=4)
 input_tensor = input_layer([coords, color])
 show_size('input', input_tensor)
-# should be (2000, 4) and (2000, 3)
 
 ### convolution
 """
 Convolution Layer. Two types.
 
-scn.SubmanifoldConvolution(dimension, nIn, nOut, filter_size, bias, groups=1)
+scn.SubmanifoldConvolution(dimension, nIn, nOut, filter_size, bias, groups=1) - same size
 scn.Convolution(dimension, nIn, nOut, filter_size, filter_stride, bias, groups=1)
 
 dimension: dimensions of the space.
@@ -79,25 +78,6 @@ MaxPool_layer = scn.MaxPooling(3, 4, 4)
 maxpool = MaxPool_layer(conv)
 show_size('maxpool', maxpool)
 
-sparse_vgg = scn.SparseVggNet(3, 3, [
-            ['C', 16, 8], ['C', 16, 8], 'MP',
-            ['C', 32, 8], ['C', 32, 8], 'MP',
-            ['C', 48, 16], ['C', 48, 16], 'MP',
-            ['C', 64, 16], ['C', 64, 16], 'MP',
-            ['C', 96, 16], ['C', 96, 16]]
-        ).add(scn.Convolution(3, 112, 128, 3, 2, False)
-        ).add(scn.BatchNormReLU(128))
-sparse_resnet = scn.Sequential(
-            scn.SubmanifoldConvolution(3, 3, 16, 3, False),
-            scn.MaxPooling(3, 3, 2),
-            scn.SparseResNet(3, 16, [
-                        ['b', 16, 2, 1],
-                        ['b', 32, 2, 2],
-                        ['b', 48, 2, 2],
-                        ['b', 96, 2, 2]]),
-            scn.Convolution(3, 96, 128, 3, 1, False),
-            scn.BatchNormReLU(128))
-
 dimension = 3
 full_scale = 4096
 reps = 2 #Conv block repetition factor
@@ -112,11 +92,6 @@ sparse_unet = scn.Sequential().add(
            scn.SubmanifoldConvolution(dimension, 3, m, 3, False)).add(
                scn.UNet(dimension, 1, [m, 2*m, 3*m, 4*m, 5*m, 6*m, 7*m], residual_blocks=False)).add(
            scn.BatchNormReLU(m))
-
-# VGG_feats = sparse_vgg(input_tensor)
-# show_size('VGG', VGG_feats)
-# RESNET_feats = sparse_resnet(input_tensor)
-# show_size('RESNET', RESNET_feats)
 
 # FCN_feats = sparse_fcn(input_tensor)
 # show_size('FCN', FCN_feats)
@@ -229,12 +204,13 @@ def FullyConvolutionalNetEncoder(dimension, reps, nPlanes, residual_blocks=False
             m = scn.Sequential()
             for _ in range(reps):
                 block(m, nPlanes[0], nPlanes[0])
-            m.add(scn.Sequential(
-                        BatchNormWithMaybeMP(nPlanes[0], MP_count=((MP_count+1) % MP_freq == 0)),
-                        scn.BatchNormReLU(nPlanes[0]),
-                        scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False), 
-                        U(nPlanes[1:], MP_count=MP_count+1)
-                    ))
+            m.add(
+                scn.Sequential().add(
+                    scn.BatchNormReLU(nPlanes[0])).add(
+                    scn.Convolution(dimension, nPlanes[0], nPlanes[1], downsample[0], downsample[1], False)).add(
+                    U(nPlanes[1:])).add(
+                    scn.UnPooling(dimension, downsample[0], downsample[1]))
+            )
         return m
     m = U(nPlanes)
     return m
@@ -253,18 +229,18 @@ class SparseConvFCNet(nn.Module):
         super().__init__()
         ratio = 2 ** depth
         self.encoder = scn.Sequential(
-            scn.BLInputLayer(dimension, full_scale, mode=4),
+            scn.InputLayer(dimension, full_scale, mode=4),
             scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
-            # FullyConvolutionalNetEncoder(
-            scn.FullyConvolutionalNet(
+            FullyConvolutionalNetEncoder(
+            # scn.FullyConvolutionalNet(
                 dimension, 
                 block_reps, 
                 [(i+1) * m for i in range(depth)], 
                 residual_blocks
                 ),
             scn.BatchNormReLU(depth * m),
-            scn.UnPooling(dimension, ratio, ratio),
-            scn.BLOutputLayer(dimension)
+            # scn.UnPooling(dimension, ratio, ratio),
+            scn.OutputLayer(dimension)
         )
     def forward(self, x: List[torch.Tensor]):
         """
@@ -284,8 +260,7 @@ class SparseConvFCNet(nn.Module):
         out_feats = self.encoder(x)
         return out_feats
 
-x = [coords, color, 1]
+x = [coords, color]
 
 test_module = SparseConvFCNet(m, dimension, full_scale, 1, False, MP_freq=4)
-print(test_module(x[:-1]).size())
-print(x[-1])
+print(test_module(x).size())

@@ -1,7 +1,7 @@
 # Training Procedure
 To train a small U-Net with 5cm-cubed sparse voxels:
 1. Follow the instructions to prepare data. 
-2. Run 'python train.py > train_scene_level_with_text_cont1.log 2>&1 &' to train the network.
+2. Run 'CUDA_VISIBLE_DEVICES=$SELECTED_DEVICE$ python -u train.py > $LOGFILENAME$.log 2>&1 &' to train the network.
 
 You can train a bigger/more accurate network by changing `m` / `block_reps` / `residual_blocks` / `scale` / `val_reps` in config, e.g.
 ```
