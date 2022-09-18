@@ -1,7 +1,7 @@
 # Training Procedure
-To train a small U-Net with 5cm-cubed sparse voxels:
-1. Follow the instructions to prepare data. 
-2. Run 'CUDA_VISIBLE_DEVICES=$SELECTED_DEVICE$ python -u train.py > $LOGFILENAME$.log 2>&1 &' to train the network.
+
+1. Follow the instructions under selected dataset (currently only ScanNetV2 is supported) to prepare data. 
+2. Run `CUDA_VISIBLE_DEVICES=$SELECTED_DEVICE$ python -u train.py > $LOGFILENAME$.log 2>&1 &` to train the network.
 
 You can train a bigger/more accurate network by changing `m` / `block_reps` / `residual_blocks` / `scale` / `val_reps` in config, e.g.
 ```
@@ -14,6 +14,17 @@ batch_size: 5 # Fit in 16GB of GPU memory
 ```
 
 # Switch Backbone
-Register your module under ```models/```. Then switch the backbone name in the config. 
+The followings are backbones available now.
+- Point cloud encoder 
+   1. SparseConvUNet
+   2. SparseConvFCNet
+   3. SparseConvFCNetEncoder
+- Text encoder 
+   1. TextTransformer
+- Architecture 
+   1. MultiLabelContrastive
+   2. MultiLabel
 
-Note that the input should be [coords, feats] and the output should be logits for every points. For details, please refer to the docstring of ```models/SparseConvNet.py```. 
+If you want to add new module, please register your module under `models/` and specity `embed_length` if it is a point cloud encoder. Then switch the backbone's name in the config. 
+
+Note that the input should be `[coords, feats]` and the output should be logits for every points. If you are using a **SparseConvNet-based point cloud encoder**, just inherit from the class `SparseConvBase_` and **redefine the structure** under `getEncoder(*args)`. The rest will be handled automatically. 
