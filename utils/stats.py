@@ -1,4 +1,6 @@
+import os
 import torch
+from dataset.data import train_files
 
 def get_pseudo_labels(logits: torch.Tensor, threshold: float=0.5, show_stats=False):
     """
@@ -23,3 +25,9 @@ def assess_label_quality(pseudo_labels, labels):
     correct = torch.sum(pseudo_labels[mask] == labels[mask])
     total = torch.sum(mask)
     return correct, total
+
+def store_pseudo_label(pseudo_labels, scene_names, batch_offset, path, suffix='_pseudo_label.pth'):
+
+    for b, scene_name in enumerate(scene_names):
+        pseudo_label = pseudo_labels[batch_offset[b] : batch_offset[b+1]]
+        torch.save(pseudo_label, os.path.join(path, scene_name + suffix))

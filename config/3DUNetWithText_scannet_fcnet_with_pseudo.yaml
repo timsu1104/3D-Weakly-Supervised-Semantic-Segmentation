@@ -1,6 +1,6 @@
 GENERAL:
-  training_name: scene_level_with_fcnet
-  model_name: MultiLabelContrastive
+  training_name: pseudo_with_fcnet_baseline
+  model_name: FullySupervised
 
 DATA:
   pointcloud_data:
@@ -8,11 +8,10 @@ DATA:
     val_reps: 1 # Number of test views, 1 or more
     batch_size: 8
     elastic_deformation: False
-  label: scene_level
-  has_text: True
-  text_data:
-    max_seq_len: 120
-    cropped_texts: 10
+  label: pseudo
+  pseudo_label_path: dataset/ScanNet/pseudo_label/scene_level_with_fcnet_without_text
+  pseudo_label_suffix: _pseudo_label.pth
+  has_text: False
 
 STRUCTURE:
   pointcloud_model:
@@ -20,15 +19,8 @@ STRUCTURE:
     m: 16 # 16 or 32
     residual_blocks: False #True or False
     block_reps: 1 #Conv block repetition factor: 1 or 2
-  text_model:
-    name: TextTransformer
-    width: 256
-    vocab_size: 49408
-    context_length: 120
-    layers: 12
   loss: 
     Classification: True
-    TextContrastive: True
 
 Training:
-  epochs: 1024
+  epochs: 512

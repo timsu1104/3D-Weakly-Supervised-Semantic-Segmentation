@@ -19,7 +19,7 @@ class MultiLabelContrastive(nn.Module):
         layers = text_config.layers
 
         pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
-        text_model, text_meta = MODEL_REGISTRY.get(text_config.name)
+        text_model, _ = MODEL_REGISTRY.get(text_config.name)
         embed_width = pc_meta.get('embed_length', lambda m : m)(m)
 
         self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
@@ -85,6 +85,33 @@ class MultiLabel(nn.Module):
             global_feats = torch.stack(global_feats)
             global_logits=self.linear(global_feats) # B, 20
             
+            global_logits = global_logits, None
+        else:
+            out_feats = self.pc_encoder(x) 
+            global_logits=self.linear(out_feats)
+
+        return global_logits
+
+@MODEL_REGISTRY.register()
+class FullySupervised(nn.Module):
+    def __init__(self, pc_config):
+        super().__init__()
+
+        m = pc_config.m
+        residual_blocks=pc_config.residual_blocks
+        block_reps = pc_config.block_reps
+
+        pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
+
+        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
+        self.linear = nn.Linear(embed_width, 20)
+
+    def forward(self, x, istrain=False):
+        if istrain:
+            (coords, feats, batch_offsets), _ = x
+            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+            global_logits=self.linear(out_feats)
             global_logits = global_logits, None
         else:
             out_feats = self.pc_encoder(x) 

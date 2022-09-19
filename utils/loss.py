@@ -18,5 +18,16 @@ def TextContrastive(pc: torch.Tensor, text: torch.Tensor, has_text):
     return contrast_loss
 
 @LOSS_REGISTRY.register()
-def Classification(global_logits: torch.Tensor, labels: torch.Tensor):
-    return F.multilabel_soft_margin_loss(global_logits, labels)
+def Classification(logits: torch.Tensor, labels: torch.Tensor):
+    """
+    Loss for scene level classification and point level classification.
+    scene level: logits (B, C), labels (B, C)
+    scene level: logits (N, C), labels (N, )
+    """
+    if labels.ndim == 2:
+        return F.multilabel_soft_margin_loss(logits, labels)
+    elif labels.ndim == 1:
+        mask = labels != -100
+        logits_for_loss = logits[mask]
+        labels_for_loss = labels[mask]
+        return F.cross_entropy(logits_for_loss, labels_for_loss)

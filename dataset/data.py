@@ -22,6 +22,7 @@ batch_size=cfg.pointcloud_data.batch_size
 elastic_deformation=cfg.pointcloud_data.elastic_deformation
 
 text_flag = cfg.has_text
+pseudo_label_flag = cfg.label == 'scene_level'
 if text_flag:
     max_seq_len = cfg.text_data.max_seq_len
     cropped_texts = cfg.text_data.cropped_texts
@@ -36,19 +37,35 @@ full_scale=4096 #Input field size
 
 train = []
 val = []
-if text_flag:
-    for x in torch.utils.data.DataLoader(
-            glob.glob('dataset/ScanNet/train_processed/*.pth'),
-            collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count()):
-        train.append(x)
+train_files = glob.glob('dataset/ScanNet/train_processed/*.pth')
+val_files = glob.glob('dataset/ScanNet/val_processed/*.pth')
+
+if pseudo_label_flag:
+    if text_flag:
+        for x in torch.utils.data.DataLoader(
+                train_files,
+                collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r')), x[0]), num_workers=mp.cpu_count() // 4):
+            train.append(x)
+    else:
+        for x in torch.utils.data.DataLoader(
+                train_files,
+                collate_fn=lambda x: (torch.load(x[0]), x[0]), num_workers=mp.cpu_count() // 4):
+            train.append(x)
 else:
-    for x in torch.utils.data.DataLoader(
-            glob.glob('dataset/ScanNet/train_processed/*.pth'),
-            collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
-        train.append(x)
+    if text_flag:
+        for x in torch.utils.data.DataLoader(
+                train_files,
+                collate_fn=lambda x: (torch.load(x[0]), torch.load(os.path.join(cfg.pseudo_label_path, x[0].split('/')[-1][:-15] + cfg.pseudo_label_suffix)), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count() // 4):
+            train.append(x)
+    else:
+        for x in torch.utils.data.DataLoader(
+                train_files,
+                collate_fn=lambda x: (torch.load(x[0]), torch.load(os.path.join(cfg.pseudo_label_path, x[0].split('/')[-1][:-15] + cfg.pseudo_label_suffix))), num_workers=mp.cpu_count() // 4):
+            train.append(x)
+
 for x in torch.utils.data.DataLoader(
-        glob.glob('dataset/ScanNet/val_processed/*.pth'),
-        collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count()):
+        val_files,
+        collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count() // 4):
     val.append(x)
 print('Training examples:', len(train))
 print('Validation examples:', len(val))
@@ -77,17 +94,29 @@ def trainMerge(tbl):
     feats=[]
     labels=[]
     scene_labels = []
+    scene_names = []
     batch_offsets = [0]
     has_text = []
     texts = []
 
     for idx,i in enumerate(tbl):
         if text_flag:
-            pc, text = train[i]
+            if pseudo_label_flag:
+                pc, text, scene_name = train[i]
+            else:
+                pc, pseudo_label, text = train[i]
         else:
-            pc = train[i]
+            if pseudo_label_flag:
+                pc, scene_name = train[i]
+            else:
+                pc, pseudo_label = train[i]
             text = []
         a, b, c = pc # a - coords, b - colors, c - label
+        if not pseudo_label_flag:
+            # print(len(c))
+            # print(len(pseudo_label))
+            assert len(pseudo_label) == len(c), (len(pseudo_label), len(c))
+            c = pseudo_label.numpy()
 
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
@@ -124,6 +153,8 @@ def trainMerge(tbl):
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c))
         scene_labels.append(torch.from_numpy(scene_label))
+        if pseudo_label_flag:
+            scene_names.append(scene_name)
         batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 
     locs = torch.cat(locs, 0)
@@ -135,16 +166,17 @@ def trainMerge(tbl):
     return {
         'x': [locs, feats, batch_offsets], 
         'y_orig': labels.long(), 
-        'y': scene_labels, 
+        'y': scene_labels if pseudo_label_flag else labels.long(), 
         'text': [texts, has_text],
-        'id': tbl
+        'id': tbl,
+        'scene_names': scene_names
         }
 train_data_loader = torch.utils.data.DataLoader(
     list(range(len(train))),
     batch_size=batch_size,
     collate_fn=trainMerge,
     num_workers=4, 
-    shuffle=True,
+    shuffle=False,
     drop_last=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )

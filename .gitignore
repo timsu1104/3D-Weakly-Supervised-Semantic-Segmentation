@@ -164,8 +164,10 @@ cython_debug/
 **/val
 **/train_processed
 **/val_processed
+**/pseudo_label
 **/exp
 **.tar
 **.pth
 **-main
 output/
+visualization/
