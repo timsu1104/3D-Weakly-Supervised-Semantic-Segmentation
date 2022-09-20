@@ -10,8 +10,9 @@ import torch, numpy as np
 import torch.utils.data, scipy.ndimage
 import multiprocessing as mp, time, json
 import os, sys, glob
+from clip import tokenize
 
-from .dataset_utils import text_transform
+# from .dataset_utils import text_transform
 
 sys.path.append(os.getcwd()) # HACK: add working directory
 from utils.config import cfg
@@ -27,7 +28,7 @@ if text_flag:
     max_seq_len = cfg.text_data.max_seq_len
     cropped_texts = cfg.text_data.cropped_texts
 
-    tokenize = text_transform(max_seq_len, cropped_texts)
+    # tokenize = text_transform(max_seq_len, cropped_texts)
 
 dimension=3
 full_scale=4096 #Input field size
@@ -44,12 +45,12 @@ if pseudo_label_flag:
     if text_flag:
         for x in torch.utils.data.DataLoader(
                 train_files,
-                collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r')), x[0]), num_workers=mp.cpu_count() // 4):
+                collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r')), x[0].split('/')[-1][:-15]), num_workers=mp.cpu_count() // 4):
             train.append(x)
     else:
         for x in torch.utils.data.DataLoader(
                 train_files,
-                collate_fn=lambda x: (torch.load(x[0]), x[0]), num_workers=mp.cpu_count() // 4):
+                collate_fn=lambda x: (torch.load(x[0]), x[0].split('/')[-1][:-15]), num_workers=mp.cpu_count() // 4):
             train.append(x)
 else:
     if text_flag:
@@ -112,11 +113,6 @@ def trainMerge(tbl):
                 pc, pseudo_label = train[i]
             text = []
         a, b, c = pc # a - coords, b - colors, c - label
-        if not pseudo_label_flag:
-            # print(len(c))
-            # print(len(pseudo_label))
-            assert len(pseudo_label) == len(c), (len(pseudo_label), len(c))
-            c = pseudo_label.numpy()
 
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
@@ -137,6 +133,8 @@ def trainMerge(tbl):
         a = a[idxs]
         b = b[idxs]
         c = c[idxs]
+        if not pseudo_label_flag:
+            pseudo_label = pseudo_label[idxs]
         a = torch.from_numpy(a).long()
 
         scene_label_inds = np.unique(c).astype('int')
@@ -151,7 +149,7 @@ def trainMerge(tbl):
 
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
-        labels.append(torch.from_numpy(c))
+        labels.append(torch.from_numpy(c if pseudo_label_flag else pseudo_label)) 
         scene_labels.append(torch.from_numpy(scene_label))
         if pseudo_label_flag:
             scene_names.append(scene_name)
@@ -166,7 +164,7 @@ def trainMerge(tbl):
     return {
         'x': [locs, feats, batch_offsets], 
         'y_orig': labels.long(), 
-        'y': scene_labels if pseudo_label_flag else labels.long(), 
+        'y': scene_labels, 
         'text': [texts, has_text],
         'id': tbl,
         'scene_names': scene_names
@@ -176,7 +174,7 @@ train_data_loader = torch.utils.data.DataLoader(
     batch_size=batch_size,
     collate_fn=trainMerge,
     num_workers=4, 
-    shuffle=False,
+    shuffle=True,
     drop_last=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )

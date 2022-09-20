@@ -22,7 +22,7 @@ from utils.registry import MODEL_REGISTRY
 from matplotlib import pyplot as plt
 
 TRAIN_NAME = cfg.training_name
-THRESHOLDS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+THRESHOLDS = torch.linspace(10, 40, 7).numpy()
 
 use_cuda = torch.cuda.is_available()
 os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)

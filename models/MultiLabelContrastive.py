@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from dataset.data import dimension, full_scale
+from dataset.data import NUM_CLASSES
 from utils.registry import MODEL_REGISTRY
 
 @MODEL_REGISTRY.register()
@@ -9,23 +9,15 @@ class MultiLabelContrastive(nn.Module):
     def __init__(self, pc_config, text_config):
         super().__init__()
 
-        m = pc_config.m
-        residual_blocks=pc_config.residual_blocks
-        block_reps = pc_config.block_reps
-
-        width = text_config.width
-        vocab_size = text_config.vocab_size
-        context_length = text_config.context_length
-        layers = text_config.layers
-
         pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
         text_model, _ = MODEL_REGISTRY.get(text_config.name)
-        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(pc_config.m)
 
-        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
-        self.text_encoder = text_model(context_length, width, layers, vocab_size)
-        self.text_linear = nn.Linear(width, embed_width)
-        self.linear = nn.Linear(embed_width, 20)
+        self.pc_encoder = pc_model(**pc_config)
+        self.text_encoder = text_model(**text_config)
+        self.text_linear = nn.Linear(text_config.width, embed_width)
+        self.linear = nn.Linear(embed_width, NUM_CLASSES)
+
     def forward(self, x, istrain=False):
         if istrain:
             (coords, feats, batch_offsets), (text, has_text) = x
@@ -38,10 +30,7 @@ class MultiLabelContrastive(nn.Module):
                 text_feats = -1
 
             out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
-            # print(out_feats.size())
 
-            # batch_offsets = x[-1]
-            # print(batch_offsets)
             B = len(batch_offsets) - 1
             global_feats = []
             for idx in range(B):
@@ -62,15 +51,11 @@ class MultiLabel(nn.Module):
     def __init__(self, pc_config):
         super().__init__()
 
-        m = pc_config.m
-        residual_blocks=pc_config.residual_blocks
-        block_reps = pc_config.block_reps
-
         pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
-        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(pc_config.m)
 
-        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
-        self.linear = nn.Linear(embed_width, 20)
+        self.pc_encoder = pc_model(**pc_config)
+        self.linear = nn.Linear(embed_width, NUM_CLASSES)
 
     def forward(self, x, istrain=False):
         if istrain:
@@ -96,23 +81,26 @@ class MultiLabel(nn.Module):
 class FullySupervised(nn.Module):
     def __init__(self, pc_config):
         super().__init__()
-
-        m = pc_config.m
-        residual_blocks=pc_config.residual_blocks
-        block_reps = pc_config.block_reps
-
+        
         pc_model, pc_meta = MODEL_REGISTRY.get(pc_config.name)
-        embed_width = pc_meta.get('embed_length', lambda m : m)(m)
+        embed_width = pc_meta.get('embed_length', lambda m : m)(pc_config.m)
 
-        self.pc_encoder = pc_model(m, dimension, full_scale, block_reps, residual_blocks)
-        self.linear = nn.Linear(embed_width, 20)
+        self.pc_encoder = pc_model(**pc_config)
+        self.linear = nn.Linear(embed_width, NUM_CLASSES)
 
     def forward(self, x, istrain=False):
         if istrain:
             (coords, feats, batch_offsets), _ = x
             out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
-            global_logits=self.linear(out_feats)
-            global_logits = global_logits, None
+            logits=self.linear(out_feats)
+
+            B = len(batch_offsets) - 1
+            global_logits = []
+            for idx in range(B):
+                global_logits.append(torch.mean(logits[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
+            global_logits = torch.stack(global_logits) # B, 20
+            
+            global_logits = global_logits, logits
         else:
             out_feats = self.pc_encoder(x) 
             global_logits=self.linear(out_feats)

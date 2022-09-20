@@ -15,14 +15,14 @@ import warnings
 from tqdm import tqdm
 warnings.filterwarnings("ignore")
 
-from dataset.data import train_data_loader, train_files
+from dataset.data import train_data_loader
 import models # register the classes
 from utils import stats
 from utils.config import cfg
 from utils.registry import MODEL_REGISTRY
 
 use_cuda = torch.cuda.is_available()
-saving_path = osp.join(cfg.path, cfg.training_name)
+saving_path = osp.join(cfg.path, cfg.training_name + f'_thresh{cfg.threshold}')
 os.makedirs(saving_path, exist_ok=True)
 exp_name=cfg.exp_path
 
@@ -52,7 +52,7 @@ with torch.no_grad():
         total_label_num += pseudo_labels.size(0)
         correct, _ = stats.assess_label_quality(pseudo_labels, batch['y_orig'])
         correct_num += correct
-        stats.store_pseudo_label(pseudo_labels.cpu(), batch['scene_names'], batch['x'][-1], saving_path, cfg.suffix)
+        stats.store_pseudo_label(pseudo_labels.cpu().numpy(), batch['scene_names'], batch['x'][-1], saving_path, cfg.suffix)
 
     end = time.time()
     print(f"Using Thresh={thresh}. \nTotal elapsed {end-start}s, generated {num_pseudo_labels} labels ({num_pseudo_labels / total_label_num * 100}%), out of which {correct_num} are correct ({correct_num/num_pseudo_labels * 100}%)")

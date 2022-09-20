@@ -9,8 +9,10 @@ class SparseConvBase_(nn.Module):
     def getEncoder(self, *args, **kwarg):
         return None
 
-    def __init__(self, *args, **kwarg):
+    def __init__(self, name:str, *args, **kwarg):
         super().__init__()
+        assert name == self.__class__.__name__
+        # print(name, self.__class__.__name__)
         self.encoder = self.getEncoder(*args, **kwarg)
     
     def forward(self, x: List[torch.Tensor]):

@@ -1,5 +1,5 @@
 GENERAL:
-  training_name: pseudo_with_fcnet_baseline
+  training_name: pseudo_with_fcnet_baseline_with_milloss
   model_name: FullySupervised
 
 DATA:
@@ -9,7 +9,7 @@ DATA:
     batch_size: 8
     elastic_deformation: False
   label: pseudo
-  pseudo_label_path: dataset/ScanNet/pseudo_label/scene_level_with_fcnet_without_text
+  pseudo_label_path: dataset/ScanNet/pseudo_label/pseudo_generator_thresh30
   pseudo_label_suffix: _pseudo_label.pth
   has_text: False
 
@@ -17,8 +17,10 @@ STRUCTURE:
   pointcloud_model:
     name: SparseConvFCNet
     m: 16 # 16 or 32
-    residual_blocks: False #True or False
+    dimension: 3
+    full_scale: 4096
     block_reps: 1 #Conv block repetition factor: 1 or 2
+    residual_blocks: False #True or False
   loss: 
     Classification: True
 

@@ -18,14 +18,16 @@ STRUCTURE:
   pointcloud_model:
     name: SparseConvFCNet
     m: 16 # 16 or 32
-    residual_blocks: False #True or False
+    dimension: 3
+    full_scale: 4096
     block_reps: 1 #Conv block repetition factor: 1 or 2
+    residual_blocks: False #True or False
   text_model:
     name: TextTransformer
-    width: 256
-    vocab_size: 49408
     context_length: 120
+    width: 256
     layers: 12
+    vocab_size: 49408
   loss: 
     Classification: True
     TextContrastive: True

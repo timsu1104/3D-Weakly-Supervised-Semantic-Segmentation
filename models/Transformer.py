@@ -28,6 +28,8 @@ import torch
 import torch.utils.checkpoint as checkpoint
 from torch import nn
 
+import clip
+
 from .misc import Result
 from .utils import ResidualAttentionBlock
 from utils.registry import MODEL_REGISTRY
@@ -64,6 +66,7 @@ class TextTransformer(nn.Module):
 
     def __init__(
         self,
+        name: str,
         context_length: int,
         width: int,
         layers: int,
@@ -72,6 +75,7 @@ class TextTransformer(nn.Module):
     ):
 
         super().__init__()
+        assert name == self.__class__.__name__
         heads = width // 64
         self.context_length = context_length
         self.width = width
@@ -113,4 +117,24 @@ class TextTransformer(nn.Module):
 
         outs.append(x, name='x')
 
+        return outs.as_return()
+
+
+@MODEL_REGISTRY.register()
+class CLIPTransformer(nn.Module):
+
+    def __init__(
+        self,
+        name: str,
+        clip_model_name: str = "ViT-B/32",
+    ):
+        super().__init__()
+        assert name == self.__class__.__name__
+        self.model, _ = clip.load(clip_model_name)
+
+    def forward(self, text, *, as_dict=False):
+        x:torch.Tensor = self.model.encode_text(text)
+        x.detach_()
+        outs = Result(as_dict=as_dict)
+        outs.append(x, name='x')
         return outs.as_return()
