@@ -20,7 +20,8 @@ class MultiLabelContrastive(nn.Module):
 
     def forward(self, x, istrain=False):
         if istrain:
-            (coords, feats, batch_offsets), (text, has_text) = x
+            pc_input, (text, has_text) = x
+            batch_offsets = pc_input.batch_offsets
 
             if has_text.size(0) > 0:
                 BText, NumText, Length = text.size()
@@ -29,7 +30,7 @@ class MultiLabelContrastive(nn.Module):
             else:
                 text_feats = -1
 
-            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+            out_feats = self.pc_encoder(pc_input) # B * NumPts, C
 
             B = len(batch_offsets) - 1
             global_feats = []
@@ -59,9 +60,10 @@ class MultiLabel(nn.Module):
 
     def forward(self, x, istrain=False):
         if istrain:
-            (coords, feats, batch_offsets), _ = x
+            pc_input, _ = x
+            batch_offsets = pc_input.batch_offsets
 
-            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+            out_feats = self.pc_encoder(pc_input) # B * NumPts, C
 
             B = len(batch_offsets) - 1
             global_feats = []
@@ -90,8 +92,9 @@ class FullySupervised(nn.Module):
 
     def forward(self, x, istrain=False):
         if istrain:
-            (coords, feats, batch_offsets), _ = x
-            out_feats = self.pc_encoder([coords, feats]) # B * NumPts, C
+            pc_input, _ = x
+            batch_offsets = pc_input.batch_offsets
+            out_feats = self.pc_encoder(pc_input) # B * NumPts, C
             logits=self.linear(out_feats)
 
             B = len(batch_offsets) - 1

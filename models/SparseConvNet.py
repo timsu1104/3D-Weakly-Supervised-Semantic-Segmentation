@@ -2,6 +2,7 @@ from typing import List
 import torch
 from torch import nn
 import sparseconvnet as scn
+from easydict import EasyDict as edict
 
 from utils.registry import MODEL_REGISTRY
 
@@ -12,10 +13,9 @@ class SparseConvBase_(nn.Module):
     def __init__(self, name:str, *args, **kwarg):
         super().__init__()
         assert name == self.__class__.__name__
-        # print(name, self.__class__.__name__)
         self.encoder = self.getEncoder(*args, **kwarg)
     
-    def forward(self, x: List[torch.Tensor]):
+    def forward(self, x: edict):
         """
         Parameters
         -------------
@@ -27,10 +27,12 @@ class SparseConvBase_(nn.Module):
         -----------
         out_feats: torch.Tensor, (B, N, m)
         """
-        coords, feats = x
+        coords = x.coords
+        feats = x.feature
+        
         assert coords.size(0) == feats.size(0), f"Coords and feats not aligned! coords's batchsize is {coords.size(0)} while feats' is {feats.size(0)}. "
 
-        out_feats = self.encoder(x)
+        out_feats = self.encoder([coords, feats])
         return out_feats
 
 @MODEL_REGISTRY.register(embed_length=lambda m: m)
@@ -130,5 +132,22 @@ class SparseConvFCNet(SparseConvBase_):
                 downsample=downsample
                 ),
             scn.BatchNormReLU(depth * (depth+1) * m // 2),
+            scn.OutputLayer(dimension)
+        )
+
+@MODEL_REGISTRY.register(embed_length=lambda m: sum([m, 64, 128, 192, 256]))
+class SparseConvFCNetNarrow(SparseConvBase_):
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, nPlanes:List[int] = [64, 128, 192, 256], downsample=[2, 2]):
+        return scn.Sequential(
+            scn.InputLayer(dimension, full_scale, mode=4),
+            scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
+            scn.FullyConvolutionalNet(
+                dimension, 
+                block_reps, 
+                [m] + nPlanes, 
+                residual_blocks,
+                downsample=downsample
+                ),
+            scn.BatchNormReLU(m + sum(nPlanes)),
             scn.OutputLayer(dimension)
         )

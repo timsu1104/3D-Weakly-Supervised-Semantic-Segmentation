@@ -1,11 +1,21 @@
 import os
 import torch
-from dataset.data import train_files
+import torch.nn.functional as F
+
+def preprocess_logits(logits: torch.Tensor):
+    """
+    Define the process procedure of logits.
+    """
+    logits_norm = F.normalize(logits, dim=-1)
+    logits = torch.sigmoid(logits_norm)
+    return logits
 
 def get_pseudo_labels(logits: torch.Tensor, threshold: float=0.5, show_stats=False):
     """
     get pseudo labels for logits
     """
+    logits = preprocess_logits(logits)
+    
     if show_stats:
         print("STATISTICS")
         print(f"Confidence ranges from {logits.min()} to {logits.max()}, detail as below. ")
@@ -29,5 +39,6 @@ def assess_label_quality(pseudo_labels, labels):
 def store_pseudo_label(pseudo_labels, scene_names, batch_offset, path, suffix='_pseudo_label.pth'):
 
     for b, scene_name in enumerate(scene_names):
+        print(scene_name)
         pseudo_label = pseudo_labels[batch_offset[b] : batch_offset[b+1]]
         torch.save(pseudo_label, os.path.join(path, scene_name + suffix))

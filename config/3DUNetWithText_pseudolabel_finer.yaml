@@ -1,0 +1,29 @@
+GENERAL:
+  training_name: pseudo_generator
+  model_name: MultiLabel
+
+DATA:
+  pointcloud_data:
+    scale: 50 #Voxel size: 1/scale - 2cm
+    val_reps: 1 # Number of test views, 1 or more
+    batch_size: 6
+    elastic_deformation: True
+  label: scene_level
+  has_text: False
+
+STRUCTURE:
+  pointcloud_model:
+    name: SparseConvFCNet
+    m: 16 # 16 or 32
+    dimension: 3
+    full_scale: 4096
+    block_reps: 2 #Conv block repetition factor: 1 or 2
+    residual_blocks: True #True or False
+  loss: 
+    Classification: True
+  
+PSEUDO_LABEL:
+  path: dataset/ScanNet/pseudo_label
+  suffix: _pseudo_label.pth
+  threshold: 0.71
+  progressbar: False

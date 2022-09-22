@@ -11,11 +11,13 @@ import torch.utils.data, scipy.ndimage
 import multiprocessing as mp, time, json
 import os, sys, glob
 from clip import tokenize
+from easydict import EasyDict as edict
 
 # from .dataset_utils import text_transform
 
 sys.path.append(os.getcwd()) # HACK: add working directory
 from utils.config import cfg
+from .dataset_utils import elastic
 
 scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
 val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
@@ -30,8 +32,8 @@ if text_flag:
 
     # tokenize = text_transform(max_seq_len, cropped_texts)
 
-dimension=3
-full_scale=4096 #Input field size
+dimension = cfg.pointcloud_model.dimension
+full_scale = cfg.pointcloud_model.full_scale #Input field size
 
 # Class IDs have been mapped to the range {0,1,...,19}
 # NYU_CLASS_IDS = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39])
@@ -71,24 +73,6 @@ for x in torch.utils.data.DataLoader(
 print('Training examples:', len(train))
 print('Validation examples:', len(val))
 
-#Elastic distortion
-blur0=np.ones((3,1,1)).astype('float32')/3
-blur1=np.ones((1,3,1)).astype('float32')/3
-blur2=np.ones((1,1,3)).astype('float32')/3
-def elastic(x,gran,mag):
-    bb=np.abs(x).max(0).astype(np.int32)//gran+3
-    noise=[np.random.randn(bb[0],bb[1],bb[2]).astype('float32') for _ in range(3)]
-    noise=[scipy.ndimage.filters.convolve(n,blur0,mode='constant',cval=0) for n in noise]
-    noise=[scipy.ndimage.filters.convolve(n,blur1,mode='constant',cval=0) for n in noise]
-    noise=[scipy.ndimage.filters.convolve(n,blur2,mode='constant',cval=0) for n in noise]
-    noise=[scipy.ndimage.filters.convolve(n,blur0,mode='constant',cval=0) for n in noise]
-    noise=[scipy.ndimage.filters.convolve(n,blur1,mode='constant',cval=0) for n in noise]
-    noise=[scipy.ndimage.filters.convolve(n,blur2,mode='constant',cval=0) for n in noise]
-    ax=[np.linspace(-(b-1)*gran,(b-1)*gran,b) for b in bb]
-    interp=[scipy.interpolate.RegularGridInterpolator(ax,n,bounds_error=0,fill_value=0) for n in noise]
-    def g(x_):
-        return np.hstack([i(x_)[:,None] for i in interp])
-    return x+g(x)*mag
 
 def trainMerge(tbl):
     locs=[]
@@ -153,6 +137,7 @@ def trainMerge(tbl):
         scene_labels.append(torch.from_numpy(scene_label))
         if pseudo_label_flag:
             scene_names.append(scene_name)
+            print("DATA LOADED", scene_name)
         batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 
     locs = torch.cat(locs, 0)
@@ -161,20 +146,27 @@ def trainMerge(tbl):
     scene_labels = torch.stack(scene_labels) # B, NumClasses
     texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
     has_text = torch.tensor(has_text).long()
-    return {
-        'x': [locs, feats, batch_offsets], 
+
+    input_batch = {
+            'coords': locs,
+            'feature': feats,
+            'batch_offsets': batch_offsets
+            }
+
+    return edict({
+        'x': edict(input_batch), 
         'y_orig': labels.long(), 
         'y': scene_labels, 
         'text': [texts, has_text],
         'id': tbl,
         'scene_names': scene_names
-        }
+        })
 train_data_loader = torch.utils.data.DataLoader(
     list(range(len(train))),
     batch_size=batch_size,
     collate_fn=trainMerge,
     num_workers=4, 
-    shuffle=True,
+    shuffle=False,
     drop_last=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )
@@ -229,7 +221,19 @@ def valMerge(tbl):
     labels=torch.cat(labels,0)
     scene_labels = torch.stack(scene_labels) # B, NumClasses
     point_ids=torch.cat(point_ids,0)
-    return {'x': [locs,feats], 'y_orig': labels.long(), 'y': scene_labels.long(), 'id': tbl, 'point_ids': point_ids}
+
+    input_batch = {
+        'coords': locs,
+        'feature': feats,
+        }
+
+    return {
+        'x': edict(input_batch), 
+        'y_orig': labels.long(), 
+        'y': scene_labels.long(), 
+        'id': tbl, 
+        'point_ids': point_ids}
+        
 val_data_loader = torch.utils.data.DataLoader(
     list(range(len(val))),
     batch_size=batch_size,

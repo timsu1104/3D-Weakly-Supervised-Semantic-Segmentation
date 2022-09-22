@@ -50,7 +50,7 @@ for epoch in range(training_epoch, training_epochs+1):
     for i, batch in enumerate(train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
-            batch['x'][1] = batch['x'][1].cuda()
+            batch['x'].feature = batch['x'].feature.cuda()
             batch['text'][0] = batch['text'][0].cuda()
             batch['text'][1] = batch['text'][1].cuda()
             batch['y'] = batch['y'].cuda()
@@ -82,7 +82,7 @@ for epoch in range(training_epoch, training_epochs+1):
     scn.checkpoint_save(model,exp_name,'model',epoch, use_cuda)
     print("Checkpoint saved.")
 
-    if scn.is_power2(epoch):
+    if scn.is_power2(epoch) or (epoch+1) % 64 == 0:
         with torch.no_grad():
             model.eval()
             store=torch.zeros(valOffsets[-1],20)
@@ -92,7 +92,7 @@ for epoch in range(training_epoch, training_epochs+1):
             for rep in range(1,1+cfg.pointcloud_data.val_reps):
                 for i,batch in enumerate(val_data_loader):
                     if use_cuda:
-                        batch['x'][1]=batch['x'][1].cuda()
+                        batch['x'].feature=batch['x'].feature.cuda()
                         batch['y_orig']=batch['y_orig'].cuda()
                     predictions=model(batch['x'])
                     store.index_add_(0,batch['point_ids'],predictions.cpu())

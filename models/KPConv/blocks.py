@@ -489,7 +489,7 @@ class UnaryBlock(nn.Module):
             self.leaky_relu = nn.LeakyReLU(0.1)
         return
 
-    def forward(self, x, batch=None):
+    def forward(self, x):
         x = self.mlp(x)
         x = self.batch_norm(x)
         if not self.no_relu:
