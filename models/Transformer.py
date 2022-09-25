@@ -127,6 +127,7 @@ class CLIPTransformer(nn.Module):
         self,
         name: str,
         clip_model_name: str = "ViT-B/32",
+        width: int
     ):
         super().__init__()
         assert name == self.__class__.__name__

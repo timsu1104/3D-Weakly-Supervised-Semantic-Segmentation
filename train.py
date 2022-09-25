@@ -34,7 +34,8 @@ if use_cuda:
     model=model.cuda()
 
 training_epochs=cfg.epochs
-training_epoch=scn.checkpoint_restore(model,exp_name,'model',use_cuda)
+training_epoch = 1
+# training_epoch=scn.checkpoint_restore(model,exp_name,'model',use_cuda)
 optimizer = optim.Adam(model.parameters())
 print('#classifier parameters', sum([x.nelement() for x in model.parameters()]))
 
@@ -46,7 +47,8 @@ for epoch in range(training_epoch, training_epochs+1):
     scn.forward_pass_hidden_states=0
     start = time.time()
     train_loss = 0
-    print("Inference started.")
+    #print("Inference started.")
+    print("Training started.")
     for i, batch in enumerate(train_data_loader):
         optimizer.zero_grad()
         if use_cuda:
@@ -58,14 +60,16 @@ for epoch in range(training_epoch, training_epochs+1):
 
         loss = 0
         
+        # print(batch['text'][0].size())
         global_logits, meta = model((batch['x'], batch['text']), istrain=True)
+        # print(meta)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
             if cfg.label == 'pseudo':
                 loss += cls_loss(meta, batch['y_orig'])
         if cfg.has_text and cfg.loss.TextContrastive: 
-            contrastive_loss, meta = LOSS_REGISTRY.get('TextContrastive')
+            contrastive_loss, meta_loss = LOSS_REGISTRY.get('TextContrastive')
             loss += contrastive_loss(*meta)
             
         train_loss += loss.item()

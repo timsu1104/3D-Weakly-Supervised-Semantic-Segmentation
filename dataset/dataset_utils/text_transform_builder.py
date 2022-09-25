@@ -30,8 +30,10 @@
 import torch
 from .tokenizer import SimpleTokenizer
 
-def text_transform(max_seq_len, cropped_texts):
-    transform = WordSplitTokenizeWrapper(Tokenize(SimpleTokenizer(), max_seq_len=max_seq_len), cropped_texts)
+# def text_transform(max_seq_len, cropped_texts):
+def text_transform(max_seq_len):
+    transform = WordSplitTokenizeWrapper(Tokenize(SimpleTokenizer(), max_seq_len=max_seq_len))
+    # transform = WordSplitTokenizeWrapper(Tokenize(SimpleTokenizer(), max_seq_len=max_seq_len), cropped_texts)
     return transform
 
 class Tokenize:
@@ -68,9 +70,11 @@ class Tokenize:
 
 class WordSplitTokenizeWrapper:
 
-    def __init__(self, tokenize, cropped_num : int):
+    #def __init__(self, tokenize, cropped_num : int):
+    def __init__(self, tokenize):
         self.tokenize = tokenize
-        self.num_texts = cropped_num
+        # self.num_texts = cropped_num
 
     def __call__(self, texts):
-        return self.tokenize(texts[:self.num_texts])
+        return self.tokenize(texts)
+        # return self.tokenize(texts[:self.num_texts])

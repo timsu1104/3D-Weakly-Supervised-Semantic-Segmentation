@@ -6,15 +6,24 @@ from utils.registry import LOSS_REGISTRY
 def TextContrastive(pc: torch.Tensor, text: torch.Tensor, has_text):
     """
     pc: B, m
-    text: B', num_text, m
+    text: num_text, m
     """
     if has_text.size(0) == 0:
         return 0
-    assert text.ndim == 3, text.size()
-    similarity = text @ pc.T # B', num_text, B
-    num_text = similarity.size(1)
-    labels = torch.tile(has_text[:, None], (1, num_text))
-    contrast_loss = F.cross_entropy(similarity.transpose(1, 2), labels)
+    
+    assert text.ndim == 2, text.size()
+    text_without_index = text[:,:-1]
+    # labels = text[:,-1]
+    labels = text[:,-1].long()
+    similarity = text_without_index @ pc.T # num_text, B
+    labels = labels.unsqueeze(0);
+    similarity = similarity.unsqueeze(0);
+    # num_text = similarity.size(1)
+    # labels = torch.tile(has_text[:, None], (1, num_text))
+    # print(similarity.size())
+    # print(labels.size())
+    
+    contrast_loss = F.cross_entropy(similarity.transpose(1,2), labels)
     return contrast_loss
 
 @LOSS_REGISTRY.register()
