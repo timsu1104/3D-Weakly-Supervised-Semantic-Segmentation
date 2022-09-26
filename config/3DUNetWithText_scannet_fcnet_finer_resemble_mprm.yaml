@@ -1,19 +1,19 @@
 GENERAL:
-  training_name: scene_level_with_fcnet_finer_narrower
+  training_name: scene_level_with_fcnet_mprm
   model_name: MultiLabel
 
 DATA:
   pointcloud_data:
     scale: 50 #Voxel size: 1/scale - 2cm
     val_reps: 3 # Number of test views, 1 or more
-    batch_size: 4
+    batch_size: 6
     elastic_deformation: True
   label: scene_level
   has_text: False
 
 STRUCTURE:
   pointcloud_model:
-    name: SparseConvFCNetNarrow
+    name: SparseConvFCNet
     m: 16 # 16 or 32
     dimension: 3
     full_scale: 4096
@@ -23,4 +23,4 @@ STRUCTURE:
     Classification: True
 
 Training:
-  epochs: 1024
+  epochs: 512

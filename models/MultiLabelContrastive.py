@@ -56,27 +56,17 @@ class MultiLabel(nn.Module):
         embed_width = pc_meta.get('embed_length', lambda m : m)(pc_config.m)
 
         self.pc_encoder = pc_model(**pc_config)
+        # self.dropout = nn.Dropout(p=0.5)
         self.linear = nn.Linear(embed_width, NUM_CLASSES)
 
     def forward(self, x, istrain=False):
-        if istrain:
-            pc_input, _ = x
-            batch_offsets = pc_input.batch_offsets
+        if istrain: x = x[0]
 
-            out_feats = self.pc_encoder(pc_input) # B * NumPts, C
+        out_feats = self.pc_encoder(x, istrain) 
+        # out_feats = self.dropout(out_feats)
+        global_logits = self.linear(out_feats)
 
-            B = len(batch_offsets) - 1
-            global_feats = []
-            for idx in range(B):
-                global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
-            global_feats = torch.stack(global_feats)
-            global_logits=self.linear(global_feats) # B, 20
-            
-            global_logits = global_logits, None
-        else:
-            out_feats = self.pc_encoder(x) 
-            global_logits=self.linear(out_feats)
-
+        if istrain: global_logits = global_logits, None
         return global_logits
 
 @MODEL_REGISTRY.register()

@@ -224,43 +224,11 @@ sparse_fcn_encoder = scn.Sequential().add(
 FCN_feats = sparse_fcn_encoder(input_tensor)
 show_size('FCN3D', FCN_feats)
 
-class SparseConvFCNet(nn.Module):
-    def __init__(self, m, dimension, full_scale, block_reps, residual_blocks, depth:int=7, MP_freq:int=3):
-        super().__init__()
-        ratio = 2 ** depth
-        self.encoder = scn.Sequential(
-            scn.InputLayer(dimension, full_scale, mode=4),
-            scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
-            FullyConvolutionalNetEncoder(
-            # scn.FullyConvolutionalNet(
-                dimension, 
-                block_reps, 
-                [(i+1) * m for i in range(depth)], 
-                residual_blocks
-                ),
-            scn.BatchNormReLU(depth * m),
-            # scn.UnPooling(dimension, ratio, ratio),
-            scn.OutputLayer(dimension)
-        )
-    def forward(self, x: List[torch.Tensor]):
-        """
-        Parameters
-        -------------
-        x: [coords, feats], 
-            coords: (B * N, 3)
-            feats: (B * N, C)
-
-        Return
-        -----------
-        out_feats: torch.Tensor, (B, N, m)
-        """
-        coords, feats = x
-        assert coords.size(0) == feats.size(0), f"Coords and feats not aligned! coords's batchsize is {coords.size(0)} while feats' is {feats.size(0)}. "
-
-        out_feats = self.encoder(x)
-        return out_feats
-
-x = [coords, color]
-
-test_module = SparseConvFCNet(m, dimension, full_scale, 1, False, MP_freq=4)
+from models.SparseConvNet import SparseConvFCNetDirectUpPool
+from easydict import EasyDict as edict
+x = edict({
+    'coords': coords,
+    'feature': color
+})
+test_module = SparseConvFCNetDirectUpPool('SparseConvFCNetDirectUpPool', m, dimension, full_scale, 1, False, downsample=[4, 4])
 print(test_module(x).size())

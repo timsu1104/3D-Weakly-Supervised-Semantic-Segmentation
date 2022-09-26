@@ -137,7 +137,6 @@ def trainMerge(tbl):
         scene_labels.append(torch.from_numpy(scene_label))
         if pseudo_label_flag:
             scene_names.append(scene_name)
-            print("DATA LOADED", scene_name)
         batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 
     locs = torch.cat(locs, 0)
@@ -166,7 +165,7 @@ train_data_loader = torch.utils.data.DataLoader(
     batch_size=batch_size,
     collate_fn=trainMerge,
     num_workers=4, 
-    shuffle=False,
+    shuffle=True,
     drop_last=True,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )

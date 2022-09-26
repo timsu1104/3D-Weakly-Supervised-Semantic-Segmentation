@@ -35,7 +35,12 @@ if use_cuda:
 
 training_epochs=cfg.epochs
 training_epoch=scn.checkpoint_restore(model,exp_name,'model',use_cuda)
-optimizer = optim.Adam(model.parameters())
+# optimizer = optim.Adam(model.parameters())
+optimizer = optim.Adam([{'params': model.parameters(), 'initial_lr': 1e-3}], lr=1e-3)
+print("Start from epoch", training_epoch)
+# optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.98)
+# lr_scheduler = optim.lr_scheduler.ExponentialLR(optimizer, (0.1)**(1/100))
+lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1, last_epoch=training_epoch)
 print('#classifier parameters', sum([x.nelement() for x in model.parameters()]))
 
 for epoch in range(training_epoch, training_epochs+1):
@@ -71,6 +76,7 @@ for epoch in range(training_epoch, training_epochs+1):
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
+    lr_scheduler.step()
     print(
         epoch,
         'Train loss', train_loss/(i+1), 
@@ -82,7 +88,7 @@ for epoch in range(training_epoch, training_epochs+1):
     scn.checkpoint_save(model,exp_name,'model',epoch, use_cuda)
     print("Checkpoint saved.")
 
-    if scn.is_power2(epoch) or (epoch+1) % 64 == 0:
+    if scn.is_power2(epoch) or epoch % 32 == 0:
         with torch.no_grad():
             model.eval()
             store=torch.zeros(valOffsets[-1],20)
