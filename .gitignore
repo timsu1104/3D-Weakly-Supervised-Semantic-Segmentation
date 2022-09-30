@@ -2,6 +2,7 @@
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/glide_model_cache
 *.py[cod]
 *$py.class
 
@@ -165,6 +166,7 @@ cython_debug/
 **/train_processed
 **/val_processed
 **/pseudo_label
+**/pseudo_images
 **/exp
 **.tar
 **.pth

@@ -1,9 +1,14 @@
+# Installation
+```bash
+pip install -e ops/point2mask 
+```
+
 # Training Procedure
 
 1. Follow the instructions under selected dataset (currently only ScanNetV2 is supported) to prepare data. 
 2. Run `CUDA_VISIBLE_DEVICES=$SELECTED_DEVICE$ python -u train.py  --config config/$CONFIG_NAME$ > $LOGFILENAME$.log 2>&1 &` to train the network.
 3. After training, you can first run `python -u statistics.py` to find out the appropriate logits threshold, and then run `python -u pseudoLabelGeneration.py  --config config/$CONFIG_NAME$`to generate pseudo labels. 
-4. After that, 
+4. After that, prepare a new config specifying the path of pseudo label. See the existing config for reference. 
 
 You can train a bigger/more accurate network by changing `m` / `block_reps` / `residual_blocks` / `scale` / `val_reps` in config, e.g.
 ```
