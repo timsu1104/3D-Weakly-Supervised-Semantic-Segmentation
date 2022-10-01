@@ -12,6 +12,7 @@ import multiprocessing as mp, time, json
 import os, sys, glob
 from clip import tokenize
 from easydict import EasyDict as edict
+import pickle
 
 # from .dataset_utils import text_transform
 
@@ -25,7 +26,8 @@ batch_size=cfg.pointcloud_data.batch_size
 elastic_deformation=cfg.pointcloud_data.elastic_deformation
 
 text_flag = cfg.has_text
-pseudo_label_flag = cfg.label == 'scene_level'
+pseudo_label_flag = cfg.label == 'pseudo'
+subcloud_flag = cfg.label == 'subcloud'
 if text_flag:
     max_seq_len = cfg.text_data.max_seq_len
     cropped_texts = cfg.text_data.cropped_texts
@@ -34,6 +36,8 @@ if text_flag:
 
 dimension = cfg.pointcloud_model.dimension
 full_scale = cfg.pointcloud_model.full_scale #Input field size
+if subcloud_flag:
+    in_radius = cfg.in_radius
 
 # Class IDs have been mapped to the range {0,1,...,19}
 # NYU_CLASS_IDS = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39])
@@ -43,28 +47,82 @@ val = []
 train_files = glob.glob('dataset/ScanNet/train_processed/*.pth')
 val_files = glob.glob('dataset/ScanNet/val_processed/*.pth')
 
-if pseudo_label_flag:
+def collect_files(x:str):
+    """
+    [data, pseudo_label*, text*, KDTree*, scene_name]
+    """
+    x = x[0]
+    data = torch.load(x)
+    prefix = x[:-15]
+    scene_name = prefix.split('/')[-1]
+
+    result = [data]
+    if pseudo_label_flag:
+        result.append(torch.load(os.path.join(cfg.pseudo_label_path, scene_name + cfg.pseudo_label_suffix)))
     if text_flag:
-        for x in torch.utils.data.DataLoader(
-                train_files,
-                collate_fn=lambda x: (torch.load(x[0]), json.load(open(x[0][:-15] + '_text.json', 'r')), x[0].split('/')[-1][:-15]), num_workers=mp.cpu_count() // 4):
-            train.append(x)
+        result.append(json.load(open(prefix + '_text.json', 'r')))
+    if subcloud_flag:
+        result.append(pickle.load(open(prefix + '_KDTree.pkl', 'rb')))
+    result.append(scene_name) # scene name
+    return result
+
+#generate sampling anchors for subclouds
+def get_anchors(points):
+    n_anchors = []
+    x_max = points[:, 0].max()
+    x_min = points[:, 0].min()
+    y_max = points[:, 1].max()
+    y_min = points[:, 1].min()
+    z_max = points[:, 2].max()
+    z_min = points[:, 2].min()
+    x_step = np.floor((x_max - x_min) / in_radius) + 1
+    y_step = np.floor((y_max - y_min) / in_radius) + 1
+    z_step = np.floor((z_max - z_min) / in_radius) + 1
+    x_num = np.linspace(x_min, x_max, int(x_step))
+    y_num = np.linspace(y_min, y_max, int(y_step))
+    z_num = np.linspace(z_min, z_max, int(z_step))
+    for x in x_num:
+        for y in y_num:
+            for z in z_num:
+                n_anchors.append([x, y, z])
+    return np.array(n_anchors)
+
+for x in torch.utils.data.DataLoader(
+        train_files,
+        collate_fn=collect_files, num_workers=mp.cpu_count() // 4):
+    if not subcloud_flag:
+        train.append(x)
     else:
-        for x in torch.utils.data.DataLoader(
-                train_files,
-                collate_fn=lambda x: (torch.load(x[0]), x[0].split('/')[-1][:-15]), num_workers=mp.cpu_count() // 4):
-            train.append(x)
-else:
-    if text_flag:
-        for x in torch.utils.data.DataLoader(
-                train_files,
-                collate_fn=lambda x: (torch.load(x[0]), torch.load(os.path.join(cfg.pseudo_label_path, x[0].split('/')[-1][:-15] + cfg.pseudo_label_suffix)), json.load(open(x[0][:-15] + '_text.json', 'r'))), num_workers=mp.cpu_count() // 4):
-            train.append(x)
-    else:
-        for x in torch.utils.data.DataLoader(
-                train_files,
-                collate_fn=lambda x: (torch.load(x[0]), torch.load(os.path.join(cfg.pseudo_label_path, x[0].split('/')[-1][:-15] + cfg.pseudo_label_suffix))), num_workers=mp.cpu_count() // 4):
-            train.append(x)
+        a, b, c = x[0]
+        scene_name = x[-1]
+        search_tree = x[-2]
+        ind = 1
+        if pseudo_label_flag:
+            pseudo_label = x[ind]
+            ind += 1
+        assert not text_flag
+        assert ind == len(x) - 2
+
+        anchors = get_anchors(a) # NAnchors, 3
+        noise = np.random.normal(scale=in_radius/10, size=anchors.shape)
+        anchors = anchors + noise.astype(anchors.dtype)
+        inds = search_tree.query_radius(anchors, in_radius)
+        # print(inds.shape)
+        # print("PC Shape", a.shape)
+        for ind in inds:
+            if ind.shape[0] < 1000:
+                continue
+            if pseudo_label_flag:
+                train.append((
+                    (a[ind], b[ind], c[ind]),
+                    pseudo_label[ind],
+                    scene_name
+                ))
+            else:
+                train.append((
+                    (a[ind], b[ind], c[ind]),
+                    scene_name
+                ))
 
 for x in torch.utils.data.DataLoader(
         val_files,
@@ -85,17 +143,17 @@ def trainMerge(tbl):
     texts = []
 
     for idx,i in enumerate(tbl):
+        data = train[i]
+        pc = data[0]
+        scene_name = data[-1]
+        ind = 1
+        if pseudo_label_flag:
+            pseudo_label = data[ind]
+            ind += 1
         if text_flag:
-            if pseudo_label_flag:
-                pc, text, scene_name = train[i]
-            else:
-                pc, pseudo_label, text = train[i]
-        else:
-            if pseudo_label_flag:
-                pc, scene_name = train[i]
-            else:
-                pc, pseudo_label = train[i]
-            text = []
+            text = data[ind]
+        assert ind == len(data) - 1
+
         a, b, c = pc # a - coords, b - colors, c - label
 
         m=np.eye(3)+np.random.randn(3,3)*0.1
@@ -117,7 +175,7 @@ def trainMerge(tbl):
         a = a[idxs]
         b = b[idxs]
         c = c[idxs]
-        if not pseudo_label_flag:
+        if pseudo_label_flag:
             pseudo_label = pseudo_label[idxs]
         a = torch.from_numpy(a).long()
 
@@ -126,16 +184,16 @@ def trainMerge(tbl):
         scene_label = np.zeros(NUM_CLASSES)
         scene_label[scene_label_inds] = 1.
 
-        if len(text) > 0:
+        if text_flag and len(text) > 0:
             has_text.append(idx)
             text = tokenize(text)
             texts.append(text)
 
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
-        labels.append(torch.from_numpy(c if pseudo_label_flag else pseudo_label)) 
+        labels.append(torch.from_numpy(c if not pseudo_label_flag else pseudo_label)) 
         scene_labels.append(torch.from_numpy(scene_label))
-        if pseudo_label_flag:
+        if not pseudo_label_flag:
             scene_names.append(scene_name)
         batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 

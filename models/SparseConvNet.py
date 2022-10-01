@@ -104,7 +104,7 @@ class SparseConvFCNetNarrow(SparseConvBase_):
             scn.OutputLayer(dimension)
         )
         
-@MODEL_REGISTRY.register(embed_length=lambda m: 256)
+@MODEL_REGISTRY.register(embed_length=lambda m: 128)
 class SparseConvFCNetDirectUpPool(SparseConvBase_):
 
     def FCNEncoder(self, dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2]):
@@ -142,6 +142,24 @@ class SparseConvFCNetDirectUpPool(SparseConvBase_):
         m = U(nPlanes)
         return m
 
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, nPlanes:List[int] = [32, 64, 96, 128], downsample=[4, 4]):
+        return scn.Sequential(
+                    scn.InputLayer(dimension, full_scale, mode=4),
+                    scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
+                    self.FCNEncoder(
+                        dimension, 
+                        block_reps, 
+                        [m] + nPlanes, 
+                        residual_blocks,
+                        downsample=downsample
+                        ),
+                    scn.BatchNormReLU(nPlanes[-1]),
+                    scn.OutputLayer(dimension)
+                )
+
+# Not Implemented yet
+@MODEL_REGISTRY.register(embed_length=lambda m: 256)
+class SparseConvFCNetIndirectUpPool(SparseConvBase_):
     def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, nPlanes:List[int] = [64, 128, 192, 256], downsample=[2, 2]):
         return scn.Sequential(
                     scn.InputLayer(dimension, full_scale, mode=4),

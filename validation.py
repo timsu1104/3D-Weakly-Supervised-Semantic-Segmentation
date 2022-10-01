@@ -10,11 +10,11 @@ import sparseconvnet as scn
 import time
 import warnings
 
-from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
+from dataset.data import val_data_loader, val, valOffsets, valLabels
 import models # register the classes
-from utils import iou, loss
+from utils import iou
 from utils.config import cfg
-from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
+from utils.registry import MODEL_REGISTRY
 
 # Setups
 warnings.filterwarnings("ignore")
