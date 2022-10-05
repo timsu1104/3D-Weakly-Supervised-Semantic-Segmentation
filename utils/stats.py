@@ -2,19 +2,26 @@ import os
 import torch
 import torch.nn.functional as F
 
-def preprocess_logits(logits: torch.Tensor):
+def preprocess_logits(logits: torch.Tensor, scene_label: torch.Tensor, batch_offsets: list):
     """
     Define the process procedure of logits.
     """
-    logits_norm = F.normalize(logits, dim=-1)
-    logits = torch.sigmoid(logits_norm)
+    B = len(batch_offsets) - 1
+    scene_labels = []
+    for idx in range(B):
+        scene_labels.append(scene_label[idx: idx+1].repeat_interleave(batch_offsets[idx+1]-batch_offsets[idx], 0))
+    scene_labels = torch.cat(scene_labels, 0)
+    logits *= scene_labels
+    # logits = F.normalize(logits, dim=-1) * 5
+    logits[logits == 0] = -1e13
+    logits = torch.softmax(logits, -1)
     return logits
 
-def get_pseudo_labels(logits: torch.Tensor, threshold: float=0.5, show_stats=False):
+def get_pseudo_labels(logits: torch.Tensor, scene_label: torch.Tensor, batch_offsets: list, threshold: float=0.5, show_stats=False):
     """
     get pseudo labels for logits
     """
-    logits = preprocess_logits(logits)
+    logits = preprocess_logits(logits, scene_label, batch_offsets)
     
     if show_stats:
         print("STATISTICS")

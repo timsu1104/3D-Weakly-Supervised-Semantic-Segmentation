@@ -1,12 +1,12 @@
 GENERAL:
-  training_name: subcloud_level_with_fcnet_uppool
+  training_name: subcloud_level_with_fcnet_uppool_re
   model_name: MultiLabel
 
 DATA:
   pointcloud_data:
     scale: 50 #Voxel size: 1/scale - 2cm
     val_reps: 3 # Number of test views, 1 or more
-    batch_size: 4
+    batch_size: 12
     elastic_deformation: True
   label: subcloud
   in_radius: 2

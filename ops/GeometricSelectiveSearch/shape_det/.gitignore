@@ -1,0 +1,5 @@
+build/
+cgal_input/
+cgal_output/
+processed/
+scannet_cgal_results/

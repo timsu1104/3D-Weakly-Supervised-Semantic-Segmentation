@@ -8,6 +8,7 @@ import os
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+import numpy as np
 import sparseconvnet as scn
 import time
 import warnings
@@ -23,7 +24,8 @@ from matplotlib import pyplot as plt
 
 TRAIN_NAME = cfg.training_name
 # THRESHOLDS = torch.linspace(10, 100, 10).numpy()
-THRESHOLDS = torch.linspace(0.71, 0.73, 6).numpy()
+# THRESHOLDS = torch.linspace(0.72, 0.74, 9).numpy()
+THRESHOLDS = np.linspace(1.0, 0.6, 41)
 
 use_cuda = torch.cuda.is_available()
 os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)
@@ -51,8 +53,9 @@ with torch.no_grad():
             if use_cuda:
                 batch['x'].feature=batch['x'].feature.cuda()
                 batch['y_orig']=batch['y_orig'].cuda()
+                batch['y']=batch['y'].cuda() # scene_label
             predictions=model(batch['x'])
-            pseudo_labels, num = stats.get_pseudo_labels(predictions, threshold=thresh, show_stats=False)
+            pseudo_labels, num = stats.get_pseudo_labels(predictions, batch['y'], batch['x'].batch_offsets, threshold=thresh, show_stats=False)
             num_pseudo_labels += num
             total_label_num += pseudo_labels.size(0)
             correct, _ = stats.assess_label_quality(pseudo_labels, batch['y_orig'])

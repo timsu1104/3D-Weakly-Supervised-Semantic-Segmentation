@@ -43,6 +43,8 @@ class SparseConvBase_(nn.Module):
         -----------
         out_feats: torch.Tensor, (B, N, m)
         """
+        if isinstance(x, dict) and not isinstance(x, edict):
+            x = edict(x)
         assert isinstance(x, edict), f"batch data type unsupported. Expected EasyDict, got {type(x)}. "
         coords = x.coords
         feats = x.feature
@@ -104,8 +106,61 @@ class SparseConvFCNetNarrow(SparseConvBase_):
             scn.OutputLayer(dimension)
         )
         
-@MODEL_REGISTRY.register(embed_length=lambda m: 128)
+@MODEL_REGISTRY.register(embed_length=lambda m: 256)
 class SparseConvFCNetDirectUpPool(SparseConvBase_):
+
+    def FCNEncoder(self, dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2]):
+        def block(m, a, b):
+            if residual_blocks: #ResNet style blocks
+                m.add(scn.ConcatTable()
+                    .add(scn.Identity() if a == b else scn.NetworkInNetwork(a, b, False))
+                    .add(scn.Sequential()
+                        .add(scn.BatchNormReLU(a))
+                        .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False))
+                        .add(scn.BatchNormReLU(b))
+                        .add(scn.SubmanifoldConvolution(dimension, b, b, 3, False)))
+                ).add(scn.AddTable())
+            else: #VGG style blocks
+                m.add(scn.Sequential()
+                    .add(scn.BatchNormReLU(a))
+                    .add(scn.SubmanifoldConvolution(dimension, a, b, 3, False)))
+        def U(nPlanes): #Recursive function
+            m = scn.Sequential()
+            if len(nPlanes) == 1:
+                for _ in range(reps):
+                    block(m, nPlanes[0], nPlanes[0])
+            else:
+                m = scn.Sequential()
+                for _ in range(reps):
+                    block(m, nPlanes[0], nPlanes[0])
+                m.add(
+                    scn.Sequential().add(
+                        scn.BatchNormReLU(nPlanes[0])).add(
+                        scn.Convolution(dimension, nPlanes[0], nPlanes[1],
+                            downsample[0], downsample[1], False)).add(
+                        U(nPlanes[1:])).add(
+                        scn.UnPooling(dimension, downsample[0], downsample[1])))
+            return m
+        m = U(nPlanes)
+        return m
+
+    def getEncoder(self, m, dimension, full_scale, block_reps, residual_blocks, nPlanes:List[int] = [64, 128, 192, 256], downsample=[2, 2]):
+        return scn.Sequential(
+                    scn.InputLayer(dimension, full_scale, mode=4),
+                    scn.SubmanifoldConvolution(dimension, 3, m, 3, False),
+                    self.FCNEncoder(
+                        dimension, 
+                        block_reps, 
+                        [m] + nPlanes, 
+                        residual_blocks,
+                        downsample=downsample
+                        ),
+                    scn.BatchNormReLU(nPlanes[-1]),
+                    scn.OutputLayer(dimension)
+                )
+
+@MODEL_REGISTRY.register(embed_length=lambda m: 128)
+class SparseConvFCNetDirectUpPoolLight(SparseConvBase_):
 
     def FCNEncoder(self, dimension, reps, nPlanes, residual_blocks=False, downsample=[2, 2]):
         def block(m, a, b):

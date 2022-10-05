@@ -7,40 +7,17 @@
 NUM_CLASSES = 20
 
 import torch, numpy as np
-import torch.utils.data, scipy.ndimage
+import torch.utils.data
 import multiprocessing as mp, time, json
 import os, sys, glob
 from clip import tokenize
 from easydict import EasyDict as edict
 import pickle
 
-# from .dataset_utils import text_transform
-
 sys.path.append(os.getcwd()) # HACK: add working directory
-from utils.config import cfg
+from utils.config import *
+from utils.self_defined_class import PointCloudDataset
 from .dataset_utils import elastic
-
-scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
-val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
-batch_size=cfg.pointcloud_data.batch_size
-elastic_deformation=cfg.pointcloud_data.elastic_deformation
-
-text_flag = cfg.has_text
-pseudo_label_flag = cfg.label == 'pseudo'
-subcloud_flag = cfg.label == 'subcloud'
-if text_flag:
-    max_seq_len = cfg.text_data.max_seq_len
-    cropped_texts = cfg.text_data.cropped_texts
-
-    # tokenize = text_transform(max_seq_len, cropped_texts)
-
-dimension = cfg.pointcloud_model.dimension
-full_scale = cfg.pointcloud_model.full_scale #Input field size
-if subcloud_flag:
-    in_radius = cfg.in_radius
-
-# Class IDs have been mapped to the range {0,1,...,19}
-# NYU_CLASS_IDS = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39])
 
 train = []
 val = []
@@ -142,8 +119,7 @@ def trainMerge(tbl):
     has_text = []
     texts = []
 
-    for idx,i in enumerate(tbl):
-        data = train[i]
+    for idx, data in enumerate(tbl):
         pc = data[0]
         scene_name = data[-1]
         ind = 1
@@ -210,23 +186,38 @@ def trainMerge(tbl):
             'batch_offsets': batch_offsets
             }
 
-    return edict({
+    return {
         'x': edict(input_batch), 
         'y_orig': labels.long(), 
         'y': scene_labels, 
         'text': [texts, has_text],
         'id': tbl,
         'scene_names': scene_names
-        })
-train_data_loader = torch.utils.data.DataLoader(
-    list(range(len(train))),
-    batch_size=batch_size,
-    collate_fn=trainMerge,
-    num_workers=4, 
-    shuffle=True,
-    drop_last=True,
-    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
-)
+        }
+
+train_dataset = PointCloudDataset(train)
+if dist_flag:
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    train_data_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        collate_fn=trainMerge,
+        num_workers=8, 
+        sampler=train_sampler,
+        drop_last=True,
+        pin_memory=True,
+        worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    )
+else:
+    train_data_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        collate_fn=trainMerge,
+        num_workers=8, 
+        shuffle=True,
+        drop_last=True,
+        worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    )
 
 valOffsets=[0]
 valLabels=[]

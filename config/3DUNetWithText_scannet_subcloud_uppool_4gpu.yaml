@@ -1,20 +1,20 @@
 GENERAL:
-  training_name: subcloud_level_with_fcnet_baseline_finer
+  training_name: subcloud_level_with_fcnet_uppool_4gpu
   model_name: MultiLabel
 
 DATA:
   pointcloud_data:
     scale: 50 #Voxel size: 1/scale - 2cm
     val_reps: 3 # Number of test views, 1 or more
-    batch_size: 10
-    elastic_deformation: False
+    batch_size: 30
+    elastic_deformation: True
   label: subcloud
   in_radius: 2
   has_text: False
 
 STRUCTURE:
   pointcloud_model:
-    name: SparseConvFCNet
+    name: SparseConvFCNetDirectUpPool
     m: 16 # 16 or 32
     dimension: 3
     full_scale: 4096
@@ -24,4 +24,6 @@ STRUCTURE:
     Classification: True
 
 Training:
-  epochs: 1024
+  epochs: 512
+  lr: 0.004
+  options: [distributed]
