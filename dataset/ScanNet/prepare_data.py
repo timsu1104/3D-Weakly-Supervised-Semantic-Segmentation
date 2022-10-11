@@ -21,20 +21,31 @@ def f(fn: str):
     split = fn.split('/')[0]
     file_name = fn[len(split) + 1:]
     fn2 = fn[:-3]+'labels.ply'
+    scene_name = fn[:-15].split('/')[-1]
+    fn3 = os.path.join('/share/datasets/ScanNetv2/scans', scene_name, scene_name + '.txt')
 
     pointcloud_file=plyfile.PlyData().read(fn)
     pointcloud=np.array([list(x) for x in pointcloud_file.elements[0]])
-    coords=np.ascontiguousarray(pointcloud[:,:3] - pointcloud[:,:3].mean(0)) # centering
+    center = pointcloud[:,:3].mean(0)
+    coords=np.ascontiguousarray(pointcloud[:,:3] - center) # centering
     colors=np.ascontiguousarray(pointcloud[:,3:6])/127.5-1 # normalize
 
     labels_file=plyfile.PlyData().read(fn2)
     labels=remapper[np.array(labels_file.elements[0]['label'])]
+    
+    lines = open(fn3).readlines()
+    for line in lines:
+        if 'axisAlignment' in line:
+            axis_align_matrix = [float(x) \
+                for x in line.rstrip().strip('axisAlignment = ').split(' ')]
+            break
+    axis_align_matrix = np.ascontiguousarray(axis_align_matrix).reshape((4,4))
 
     if not osp.exists(split + '_processed'):
         os.makedirs(split + '_processed')
-    torch.save((coords, colors, labels),osp.join(split + '_processed', file_name[:-4] + '.pth'))
+    torch.save(((coords, center), colors, labels, axis_align_matrix),osp.join(split + '_processed', file_name[:-4] + '.pth'))
 
-    print(fn, fn2)
+    print(fn)
 
 p = mp.Pool(processes=mp.cpu_count())
 p.map(f,files)

@@ -8,7 +8,6 @@ import os
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
 import sparseconvnet as scn
 import time
 import warnings
@@ -24,8 +23,7 @@ from matplotlib import pyplot as plt
 
 TRAIN_NAME = cfg.training_name
 # THRESHOLDS = torch.linspace(10, 100, 10).numpy()
-# THRESHOLDS = torch.linspace(0.72, 0.74, 9).numpy()
-THRESHOLDS = np.linspace(1.0, 0.6, 41)
+THRESHOLDS = torch.linspace(0.6, 0.8, 9).numpy()
 
 use_cuda = torch.cuda.is_available()
 os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)

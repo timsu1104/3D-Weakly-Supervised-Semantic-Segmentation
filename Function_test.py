@@ -21,7 +21,7 @@ coords -= torch.min(coords, dim=0)[0]
 coords /= torch.max(coords, dim=0)[0] - torch.min(coords, dim=0)[0]
 color -= torch.min(color, dim=0)[0]
 color /= torch.max(color, dim=0)[0] - torch.min(color, dim=0)[0]
-coords *= 4096 # [0, 4096]
+coords *= 256 # [0, 4096]
 color = 2 * color - 1 # [-1, 1]
 
 # batch_inds = torch.tile(torch.tensor([[0], [1]]), (100000, 1))
@@ -42,9 +42,18 @@ spatial_size: the length of the space (is a cube actually)
 mode: how to deal with duplicates 
 1 means last-occured, 2 means first occured, 3 means sum, 4 means average. 
 """
-input_layer = scn.InputLayer(3, 4096, mode=4)
-input_tensor = input_layer([coords, color])
+input_layer = scn.InputLayer(3, 256, mode=4)
+dense_mod = scn.SparseToDense(3, 2)
+
+print(coords.size())
+print(color[:, :-1].size())
+input_tensor = input_layer([coords, color[:, :-1]])
+dense = dense_mod(input_tensor)
+print(dense.size())
+
 show_size('input', input_tensor)
+print(torch.sum(dense != 0))
+exit(0)
 
 ### convolution
 """
@@ -69,6 +78,7 @@ submconv = Middle_SubMConv_layer(submconv)
 show_size('submconv', submconv)
 conv = Conv_layer(submconv)
 show_size('conv', conv)
+exit(0)
 
 ### Pooling Layer
 """

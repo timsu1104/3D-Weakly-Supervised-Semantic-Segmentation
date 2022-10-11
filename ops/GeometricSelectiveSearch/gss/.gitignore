@@ -11,7 +11,7 @@ Makefile
 
 cmake_install.cmake
 output/
-computed_proposal/
+computed_proposal_scannet/
 misc/
 
 seg_results

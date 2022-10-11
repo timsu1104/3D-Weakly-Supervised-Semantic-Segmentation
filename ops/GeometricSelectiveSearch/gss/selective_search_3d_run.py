@@ -123,8 +123,8 @@ def run_s3dis(names, masks):
 
 if __name__=='__main__':
     """ mask order: "size", "segmentation", "fill", "volume" """
-    names = ["size"]
-    masks = [SimilarityMask(1, 0, 0, 0)]
+    names = ["fv"]
+    masks = [SimilarityMask(0, 0, 1, 1)]
 
     # names = ["fill", 'volume', 'sf', 'sfv']
     # masks = [SimilarityMask(0, 0, 1, 0), SimilarityMask(0, 0, 0, 1),
