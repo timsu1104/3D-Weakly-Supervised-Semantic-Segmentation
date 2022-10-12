@@ -13,7 +13,7 @@ text_format = cfg.text_format
 
 dataset_name = 'noisy'
 
-NumImages = 9000
+NumImages = 150
 batch_size = 25
 texts = [text_format] * NumImages
 

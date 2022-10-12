@@ -31,3 +31,6 @@ def Classification(logits: torch.Tensor, labels: torch.Tensor):
         logits_for_loss = logits[mask]
         labels_for_loss = labels[mask]
         return F.cross_entropy(logits_for_loss, labels_for_loss)
+@LOSS_REGISTRY.register()
+def Gan(pseudo_mask: torch.Tensor):
+    None
