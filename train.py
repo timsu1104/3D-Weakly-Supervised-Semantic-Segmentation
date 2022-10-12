@@ -14,14 +14,13 @@ import warnings
 from torchvision import transforms, utils
 from utils import iou, loss
 from utils.config import *
-from models.projector import projector     
 
 from dataset.pseudo_loader import Pseudo_Images
 from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 
 import models # register the classes
 from utils import iou, loss
-from utils.config import cfg
+from utils.config import cfg, verbose
 from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 from itertools import cycle
 # Setups
@@ -54,6 +53,13 @@ print("Start from epoch", training_epoch)
 lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1, last_epoch=training_epoch)
 print('#classifier parameters', sum([x.nelement() for x in model.parameters()]))
 if cfg.loss.Gan:
+    
+    embed_width = MODEL_REGISTRY.get(cfg.pointcloud_model.name)[1].get('embed_length', lambda m : m)(cfg.pointcloud_model.m)
+    projector_, proj_meta=MODEL_REGISTRY.get('Projector')
+    projector = projector_(embed_width, out_channels=cfg.projector.mask_channels, resolution=cfg.projector.mask_res)
+    if use_cuda:
+        projector = projector.cuda()
+    
     #load dataset, discriminator,optimizer for discriminator
     cls_lst=['wall','floor','cabinet','bed','chair','sofa','table','door','window','bookshelf','picture','counter','desk','curtain','refridgerator','shower curtain','toilet','sink','bathtub','otherfurniture']
     valid_cls=[False,False,  False    ,False,True ,False,   False,  False, False,   False,      False,    False,    False,  False,   False,          False,          False,    False,   False,  False]
@@ -64,15 +70,15 @@ if cfg.loss.Gan:
     #TODO: I think some tricky normalize needs to be applied, like 1->0.999, 0->0.0001, or other?
     ])
     pseudo_dataset=Pseudo_Images('/home/shizhong/3DUNetWithText/dataset/pseudo_images',cls_lst,valid_cls,img_type='mask',transform=transforms.ToTensor())
-    discriminator,dis_meta=MODEL_REGISTRY.get(cfg.loss.gan_name)
+    discriminator_,dis_meta=MODEL_REGISTRY.get(cfg.loss.gan_name)
+    # discriminator = discriminator_()
     pseudo_mask_loader=torch.utils.data.DataLoader(pseudo_dataset,
                                              batch_size=32, shuffle=True,
                                              num_workers=4)
     pseudo_iter=iter(cycle(pseudo_mask_loader))
     print(next(pseudo_iter)[0].shape)
     optimizer_d = optim.Adam([{'params': model.parameters(), 'initial_lr': cfg.dis_lr}], lr=cfg.dis_lr)
-    project=projector.Projector(20,1,224)
-    optimizer.add_param_group({'params':project.parameters(), 'initial_lr': cfg.lr})
+    optimizer_g = optim.Adam([{'params':projector.parameters(), 'initial_lr': cfg.lr}], lr=cfg.lr)
 
     
 for epoch in range(training_epoch, training_epochs+1):
@@ -84,6 +90,7 @@ for epoch in range(training_epoch, training_epochs+1):
     start = time.time()
     train_loss = 0
     print("Inference started.")
+    e_iter = 0
     for i, batch in enumerate(train_data_loader):
         s_iter = time.time()
         if verbose: print("Data fetch elapsed {}s".format(s_iter - e_iter))
@@ -101,8 +108,8 @@ for epoch in range(training_epoch, training_epochs+1):
 
         loss = 0
         
-        global_logits, meta = model((batch['x'], batch['text']), istrain=True)
-        print(global_logits,meta)
+        global_logits, point_logits = model((batch['x'], batch['text']), istrain=True)
+        # print(global_logits,meta)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
@@ -114,11 +121,20 @@ for epoch in range(training_epoch, training_epochs+1):
 
 
         if cfg.loss.Gan=='Gan':
+            
+            # projector
+            torch.cuda.empty_cache()
+            projector.train()
+            if use_cuda:
+                batch['x'].coords = batch['x'].coords.cuda()
+            gen_mask = projector(batch['x'].coords, point_logits, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
+            print(gen_mask.size())
+            
             discriminator.train()
             optimizer_d.zero_grad()
-            #TODO: checkout the actuall functions
+            #TODO: checkout the actual functions
             gen_image,gen_label=pseudo_iter.next()
-            gen_valid=discriminator(gen_img,gen_label)
+            gen_valid=discriminator(gen_image,gen_label)
             g_loss=torch.log(1-gen_valid)
             loss+=g_loss
             optimizer_g.step()
@@ -131,7 +147,7 @@ for epoch in range(training_epoch, training_epochs+1):
                 #Do something
                 None
             else:
-                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_img.detach(),gen_label)).mean()
+                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_image.detach(),gen_label)).mean()
                 d_loss.backward()
                 optimizer_d.step()
             
@@ -141,13 +157,13 @@ for epoch in range(training_epoch, training_epochs+1):
 
 
 
-        if verbose: print("Forwarding elapsed {}s".format(e1_iter - s_iter))
+        if verbose: print("Forwarding elapsed {}s".format(e_iter - s_iter))
 
             
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
-        e1_iter = time.time()
+        e_iter = time.time()
     lr_scheduler.step()
     print(
         epoch,

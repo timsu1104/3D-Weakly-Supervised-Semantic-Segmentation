@@ -1,8 +1,10 @@
 import torch
 from torch import nn
+from utils.registry import MODEL_REGISTRY
 
 from .components import cropBox, MattingModule, Voxelizer
 
+@MODEL_REGISTRY.register()
 class Projector(nn.Module):
     """
     Matting the pointcloud
@@ -13,7 +15,7 @@ class Projector(nn.Module):
         self.voxelizer = Voxelizer(out_channels, resolution=resolution)
     
     def forward(self, coords, feats, boxes, transform, view='HWZ'):
-        cropped_coords, cropped_feats,dominate_class = cropBox(coords, feats, boxes, transform)
+        cropped_coords, cropped_feats,batch_lens,dominate_class = cropBox(coords, feats, boxes, transform)
         segmented_coords, segmented_feats = self.matting(cropped_coords, cropped_feats,dominate_class)
         masks = self.voxelizer(segmented_coords, segmented_feats, view=view)
         return masks

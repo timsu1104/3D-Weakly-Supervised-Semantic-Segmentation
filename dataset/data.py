@@ -150,7 +150,7 @@ def trainMerge(tbl):
     for idx,i in enumerate(tbl):
         data = train[i]
         pc = data[0]
-        box = data[1]
+        box = torch.from_numpy(data[1])[:10]
         scene_name = data[-1]
         ind = 2
         if pseudo_label_flag:
@@ -160,8 +160,10 @@ def trainMerge(tbl):
             text = data[ind]
         assert ind == len(data) - 1
         #TODO: debug here
-        (a, center), b, c = pc # a - coords, b - colors, c - label
-        align_mat=None
+        (a, center), b, c, align_mat = pc # a - coords, b - colors, c - label
+        # a = a[:40000]
+        # b = b[:40000]
+        # c = c[:40000]
         
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
