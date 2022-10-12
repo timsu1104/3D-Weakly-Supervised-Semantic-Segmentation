@@ -121,9 +121,7 @@ for epoch in range(training_epoch, training_epochs+1):
             gen_valid=discriminator(gen_img,gen_label)
             g_loss=torch.log(1-gen_valid)
             loss+=g_loss
-            optimizer_g.step()
 
-            optimizer_d.zero_grad()
             pseudo_image,cls_label=pseudo_iter.next()
             you_want_multiple_update=0
             #TODO: This part might have some problem, you might need to update positive examples multiple times
