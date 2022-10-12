@@ -1,1 +1,1 @@
-from . import Transformer, SparseConvNet, MultiLabelContrastive
+from . import Transformer, SparseConvNet, MultiLabelContrastive, GanDiscriminator

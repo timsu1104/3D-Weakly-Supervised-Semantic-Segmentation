@@ -43,8 +43,6 @@ class SparseConvBase_(nn.Module):
         -----------
         out_feats: torch.Tensor, (B, N, m)
         """
-        if isinstance(x, dict) and not isinstance(x, edict):
-            x = edict(x)
         assert isinstance(x, edict), f"batch data type unsupported. Expected EasyDict, got {type(x)}. "
         coords = x.coords
         feats = x.feature

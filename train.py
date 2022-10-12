@@ -14,50 +14,40 @@ import warnings
 from torchvision import transforms, utils
 from utils import iou, loss
 from utils.config import *
-#I can't make this run, also, I have changed dataset/__init__.py to NULL to run the program
-dist_flag=0
-local_rank=0
-import test_blocks
-if dist_flag:
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
-    device = torch.device('cuda', local_rank)
-    torch.distributed.init_process_group("nccl")
-    
+from models.projector import projector     
+
+from dataset.pseudo_loader import Pseudo_Images
+from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
+
 import models # register the classes
+from utils import iou, loss
+from utils.config import cfg
 from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 from itertools import cycle
-
 # Setups
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+TRAIN_NAME = cfg.training_name
 
 use_cuda = torch.cuda.is_available()
 print("using cuda?")
 print(use_cuda)
 os.makedirs(os.path.join('exp', TRAIN_NAME), exist_ok=True)
 exp_name=cfg.exp_path
-if local_rank == 0:
-    writer = SummaryWriter(os.path.join('exp', TRAIN_NAME))
+writer = SummaryWriter(os.path.join('exp', TRAIN_NAME))
 
 model_, model_meta = MODEL_REGISTRY.get(cfg.model_name)
 model = model_(cfg.pointcloud_model, cfg.text_model) if cfg.has_text else model_(cfg.pointcloud_model)
+if use_cuda:
+    model=model.cuda()
+
 training_epochs=cfg.epochs
 training_epoch=scn.checkpoint_restore(model,exp_name,'model',use_cuda)
 
-if dist_flag:
-    model = torch.nn.parallel.DistributedDataParallel(model.to(device),
-                                                        device_ids=[local_rank],
-                                                        output_device=local_rank)
-else:
-    if use_cuda:
-        model=model.cuda()
-
-from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
-from dataset.pseudo_loader import Pseudo_Images
 # optimizer = optim.Adam(model.parameters())
 print(cfg)
 optimizer = optim.Adam([{'params': model.parameters(), 'initial_lr': cfg.lr}], lr=cfg.lr)
+
 print("Start from epoch", training_epoch)
 # optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.98)
 # lr_scheduler = optim.lr_scheduler.ExponentialLR(optimizer, (0.1)**(1/100))
@@ -68,36 +58,42 @@ if cfg.loss.Gan:
     cls_lst=['wall','floor','cabinet','bed','chair','sofa','table','door','window','bookshelf','picture','counter','desk','curtain','refridgerator','shower curtain','toilet','sink','bathtub','otherfurniture']
     valid_cls=[False,False,  False    ,False,True ,False,   False,  False, False,   False,      False,    False,    False,  False,   False,          False,          False,    False,   False,  False]
     data_transform = transforms.Compose([
-        transforms.RandomSizedCrop(224),
+        transforms.RandomSizedCrop(224),#TODO:decide a size to cut
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor()
-    ])
     #TODO: I think some tricky normalize needs to be applied, like 1->0.999, 0->0.0001, or other?
-    pseudo_dataset=Pseudo_Images('./dataset/pseudo_images/',cls_lst,valid_cls,img_type='mask',Transform=transforms.ToTensor())
-    discriminator=MODEL_REGISTRY.get(cfg.loss.gan_name)
+    ])
+    pseudo_dataset=Pseudo_Images('/home/shizhong/3DUNetWithText/dataset/pseudo_images',cls_lst,valid_cls,img_type='mask',transform=transforms.ToTensor())
+    discriminator,dis_meta=MODEL_REGISTRY.get(cfg.loss.gan_name)
     pseudo_mask_loader=torch.utils.data.DataLoader(pseudo_dataset,
-                                             batch_size=25, shuffle=True,
-                                             num_workers=4) 
+                                             batch_size=32, shuffle=True,
+                                             num_workers=4)
     pseudo_iter=iter(cycle(pseudo_mask_loader))
+    print(next(pseudo_iter)[0].shape)
     optimizer_d = optim.Adam([{'params': model.parameters(), 'initial_lr': cfg.dis_lr}], lr=cfg.dis_lr)
+    project=projector.Projector(20,1,224)
+    optimizer.add_param_group({'params':project.parameters(), 'initial_lr': cfg.lr})
 
+    
 for epoch in range(training_epoch, training_epochs+1):
-    if local_rank == 0:
-        print("Starting epoch", epoch)
+    print("Starting epoch", epoch)
     model.train()
+    stats = {}
     scn.forward_pass_multiplyAdd_count=0
     scn.forward_pass_hidden_states=0
     start = time.time()
     train_loss = 0
-    if verbose: print("Inference started.")
-    e_iter = time.time()
+    print("Inference started.")
     for i, batch in enumerate(train_data_loader):
-        print(batch)
         s_iter = time.time()
         if verbose: print("Data fetch elapsed {}s".format(s_iter - e_iter))
+
         optimizer.zero_grad()
         if use_cuda:
-            batch['x']['feature'] = batch['x']['feature'].cuda()
+            batch['x'].feature = batch['x'].feature.cuda()
+            batch['x'].boxes = batch['x'].boxes.cuda()
+            for i, t in enumerate(batch['x'].transform):
+                batch['x'].transform[i] = t.cuda()
             batch['text'][0] = batch['text'][0].cuda()
             batch['text'][1] = batch['text'][1].cuda()
             batch['y'] = batch['y'].cuda()
@@ -115,21 +111,16 @@ for epoch in range(training_epoch, training_epochs+1):
         if cfg.has_text and cfg.loss.TextContrastive: 
             contrastive_loss, meta = LOSS_REGISTRY.get('TextContrastive')
             loss += contrastive_loss(*meta)
-        e1_iter = time.time()
 
 
         if cfg.loss.Gan=='Gan':
             discriminator.train()
             optimizer_d.zero_grad()
             #TODO: checkout the actuall functions
-            boundingbox=GetBoundingBox(batch)
-            cropped_data=Cropping(logits,meta,batch,boundingbox)
-            masks,y=MaskProduce(cropped_data)#mask are logits
-            gen_img=nn.Sigmoid()(mask)
-            images=Projector(masks)
-            gen_valid=discriminator(gen_img,y)
+            gen_image,gen_label=pseudo_iter.next()
+            gen_valid=discriminator(gen_img,gen_label)
             g_loss=torch.log(1-gen_valid)
-            g_loss.mean().backward()
+            loss+=g_loss
             optimizer_g.step()
 
             optimizer_d.zero_grad()
@@ -138,42 +129,40 @@ for epoch in range(training_epoch, training_epochs+1):
             #TODO: This part might have some problem, you might need to update positive examples multiple times
             if you_want_multiple_update:
                 #Do something
+                None
             else:
-                d_loss=-torch.log(discriminator(x,cls_label)).mean()-torch.log(1-discriminator(gen_img.detach(),y)).mean()
+                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_img.detach(),gen_label)).mean()
                 d_loss.backward()
                 optimizer_d.step()
             
         if cfg.loss.Gan=='WGanGP':
             #TODO:Complete WGanGP pipeline
+            assert(cfg.loss.Gan=='WGanGP')
 
 
 
         if verbose: print("Forwarding elapsed {}s".format(e1_iter - s_iter))
+
             
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
-        e_iter = time.time()
-        if verbose: print("Backward elapsed {}s".format(e_iter - e1_iter))
-        if verbose: print("Model running elapsed {}s".format(e_iter-s_iter))
-        
+        e1_iter = time.time()
     lr_scheduler.step()
-    if local_rank == 0:
-        print(
-            epoch,
-            'Train loss', train_loss/(i+1), 
-            'MegaMulAdd', scn.forward_pass_multiplyAdd_count/len(train)/1e6, 
-            'MegaHidden', scn.forward_pass_hidden_states/len(train)/1e6,
-            'time', time.time() - start, 's'
-            )
-        writer.add_scalar("Train Loss", train_loss/(i+1), epoch)
-        scn.checkpoint_save(model.module,exp_name,'model',epoch, use_cuda)
-        if verbose: print("Checkpoint saved.")
+    print(
+        epoch,
+        'Train loss', train_loss/(i+1), 
+        'MegaMulAdd', scn.forward_pass_multiplyAdd_count/len(train)/1e6, 
+        'MegaHidden', scn.forward_pass_hidden_states/len(train)/1e6,
+        'time', time.time() - start, 's'
+        )
+    writer.add_scalar("Train Loss", train_loss/(i+1), epoch)
+    scn.checkpoint_save(model,exp_name,'model',epoch, use_cuda)
+    print("Checkpoint saved.")
 
-    if local_rank == 0 and (scn.is_power2(epoch) or epoch % 32 == 0):
+    if scn.is_power2(epoch) or epoch % 32 == 0:
         with torch.no_grad():
-            val_model = model.module()
-            val_model.eval()
+            model.eval()
             store=torch.zeros(valOffsets[-1],20)
             scn.forward_pass_multiplyAdd_count=0
             scn.forward_pass_hidden_states=0
@@ -183,7 +172,7 @@ for epoch in range(training_epoch, training_epochs+1):
                     if use_cuda:
                         batch['x'].feature=batch['x'].feature.cuda()
                         batch['y_orig']=batch['y_orig'].cuda()
-                    predictions=val_model(batch['x'])
+                    predictions=model(batch['x'])
                     store.index_add_(0,batch['point_ids'],predictions.cpu())
                 print(
                     epoch,

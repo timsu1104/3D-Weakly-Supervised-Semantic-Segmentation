@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 from dataset.data import NUM_CLASSES
 from utils.registry import MODEL_REGISTRY
 @MODEL_REGISTRY.register()

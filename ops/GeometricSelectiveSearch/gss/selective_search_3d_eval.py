@@ -16,7 +16,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', default='scannet', 
                         help='dataset to use: scannet | s3dis')
-    parser.add_argument('--data_path', default='../wypr/dataset/scannet/', 
+    parser.add_argument('--data_path', default='/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/dataset/ScanNet', 
                         help='path to scannet')
     parser.add_argument('--split', '-s', default='val', 
                         help='evaluation data split [default: val]')

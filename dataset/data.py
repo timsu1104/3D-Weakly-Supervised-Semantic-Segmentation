@@ -15,14 +15,34 @@ from easydict import EasyDict as edict
 import pickle
 
 sys.path.append(os.getcwd()) # HACK: add working directory
-from utils.config import *
-from utils.self_defined_class import PointCloudDataset
+from utils.config import cfg
 from .dataset_utils import elastic
+
+scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
+val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
+batch_size=cfg.pointcloud_data.batch_size
+elastic_deformation=cfg.pointcloud_data.elastic_deformation
+
+text_flag = cfg.has_text
+pseudo_label_flag = cfg.label == 'pseudo'
+subcloud_flag = cfg.label == 'subcloud'
+if text_flag:
+    max_seq_len = cfg.text_data.max_seq_len
+    cropped_texts = cfg.text_data.cropped_texts
+
+dimension = cfg.pointcloud_model.dimension
+full_scale = cfg.pointcloud_model.full_scale #Input field size
+if subcloud_flag:
+    in_radius = cfg.in_radius
+
+# Class IDs have been mapped to the range {0,1,...,19}
+# NYU_CLASS_IDS = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34, 36, 39])
 
 train = []
 val = []
 train_files = glob.glob('dataset/ScanNet/train_processed/*.pth')
 val_files = glob.glob('dataset/ScanNet/val_processed/*.pth')
+box_path = '/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv'
 
 def collect_files(x:str):
     """
@@ -32,8 +52,10 @@ def collect_files(x:str):
     data = torch.load(x)
     prefix = x[:-15]
     scene_name = prefix.split('/')[-1]
+    box_file = os.path.join(box_path, scene_name + '_prop.npy')
+    box = np.load(box_file)
 
-    result = [data]
+    result = [data, box]
     if pseudo_label_flag:
         result.append(torch.load(os.path.join(cfg.pseudo_label_path, scene_name + cfg.pseudo_label_suffix)))
     if text_flag:
@@ -71,9 +93,10 @@ for x in torch.utils.data.DataLoader(
         train.append(x)
     else:
         a, b, c = x[0]
+        box = x[1]
         scene_name = x[-1]
         search_tree = x[-2]
-        ind = 1
+        ind = 2
         if pseudo_label_flag:
             pseudo_label = x[ind]
             ind += 1
@@ -84,20 +107,20 @@ for x in torch.utils.data.DataLoader(
         noise = np.random.normal(scale=in_radius/10, size=anchors.shape)
         anchors = anchors + noise.astype(anchors.dtype)
         inds = search_tree.query_radius(anchors, in_radius)
-        # print(inds.shape)
-        # print("PC Shape", a.shape)
         for ind in inds:
             if ind.shape[0] < 1000:
                 continue
             if pseudo_label_flag:
                 train.append((
-                    (a[ind], b[ind], c[ind]),
+                    (a[ind], b[ind], c[ind]), 
+                    box,
                     pseudo_label[ind],
                     scene_name
                 ))
             else:
                 train.append((
                     (a[ind], b[ind], c[ind]),
+                    box,
                     scene_name
                 ))
 
@@ -111,6 +134,7 @@ print('Validation examples:', len(val))
 
 def trainMerge(tbl):
     locs=[]
+    boxes = []
     feats=[]
     labels=[]
     scene_labels = []
@@ -118,29 +142,36 @@ def trainMerge(tbl):
     batch_offsets = [0]
     has_text = []
     texts = []
+    align_matrices = []
+    centers = []
+    rots = []
+    offsets = []
 
-    for idx, data in enumerate(tbl):
+    for idx,i in enumerate(tbl):
+        data = train[i]
         pc = data[0]
+        box = data[1]
         scene_name = data[-1]
-        ind = 1
+        ind = 2
         if pseudo_label_flag:
             pseudo_label = data[ind]
             ind += 1
         if text_flag:
             text = data[ind]
         assert ind == len(data) - 1
-
-        a, b, c = pc # a - coords, b - colors, c - label
-
+        #TODO: debug here
+        (a, center), b, c = pc # a - coords, b - colors, c - label
+        align_mat=None
+        
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
         m*=scale
         theta=np.random.rand()*2*np.pi
-        m=np.matmul(m,[[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
-        a=np.matmul(a,m)
-        if elastic_deformation:
-            a=elastic(a,6*scale//50,40*scale/50) # 16
-            a=elastic(a,20*scale//50,160*scale/50) # 64
+        rot=np.matmul(m,[[np.cos(theta),np.sin(theta),0],[-np.sin(theta),np.cos(theta),0],[0,0,1]])
+        a=np.matmul(a,rot)
+        # if elastic_deformation:
+        #     a=elastic(a,6*scale//50,40*scale/50) # 16
+        #     a=elastic(a,20*scale//50,160*scale/50) # 64
         m = a.min(0)
         M = a.max(0)
         length=M-m
@@ -166,58 +197,55 @@ def trainMerge(tbl):
             texts.append(text)
 
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
+        boxes.append(torch.cat([box[:, :6],torch.LongTensor(box.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c if not pseudo_label_flag else pseudo_label)) 
         scene_labels.append(torch.from_numpy(scene_label))
+        align_matrices.append(torch.from_numpy(align_mat).float())
+        centers.append(torch.from_numpy(center).float())
+        rots.append(torch.from_numpy(np.linalg.inv(rot)).float())
+        offsets.append(torch.from_numpy(offset).float())
         if not pseudo_label_flag:
             scene_names.append(scene_name)
         batch_offsets.append(batch_offsets[-1] + np.sum(idxs))
 
     locs = torch.cat(locs, 0)
+    boxes = torch.cat(boxes, 0)
     feats = torch.cat(feats, 0)
     labels = torch.cat(labels, 0) # B, N
     scene_labels = torch.stack(scene_labels) # B, NumClasses
     texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
     has_text = torch.tensor(has_text).long()
+    align_matrices = torch.stack(align_matrices)
+    centers = torch.stack(centers)
+    rots = torch.stack(rots)
+    offsets = torch.stack(offsets)
 
     input_batch = {
             'coords': locs,
             'feature': feats,
-            'batch_offsets': batch_offsets
+            'batch_offsets': batch_offsets,
+            'boxes': boxes, # (NumBoxes, 6+1)
+            'transform': [align_matrices, centers, rots, offsets]
             }
 
-    return {
+    return edict({
         'x': edict(input_batch), 
         'y_orig': labels.long(), 
         'y': scene_labels, 
         'text': [texts, has_text],
         'id': tbl,
         'scene_names': scene_names
-        }
-
-train_dataset = PointCloudDataset(train)
-if dist_flag:
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    train_data_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        collate_fn=trainMerge,
-        num_workers=8, 
-        sampler=train_sampler,
-        drop_last=True,
-        pin_memory=True,
-        worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
-    )
-else:
-    train_data_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        collate_fn=trainMerge,
-        num_workers=8, 
-        shuffle=True,
-        drop_last=True,
-        worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
-    )
+        })
+train_data_loader = torch.utils.data.DataLoader(
+    list(range(len(train))),
+    batch_size=batch_size,
+    collate_fn=trainMerge,
+    num_workers=4, 
+    shuffle=True,
+    drop_last=True,
+    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+)
 
 valOffsets=[0]
 valLabels=[]
@@ -234,7 +262,7 @@ def valMerge(tbl):
     point_ids=[]
 
     for idx,i in enumerate(tbl):
-        a,b,c=val[i]
+        (a, _),b,c,_=val[i]
 
         m=np.eye(3)
         m[0][0]*=np.random.randint(0,2)*2-1

@@ -1,15 +1,13 @@
 from __future__ import print_function, division
 import os
 import torch
-import pandas as pd
 from skimage import io, transform
 import numpy as np
-import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 
 class Pseudo_Images(Dataset):
-    def __init__(self, root_dir, cls_lst,cls_valid,img_type='mask',transform=None):
+    def __init__(self, root_dir, cls_lst,valid_cls,img_type='mask',transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
@@ -25,18 +23,29 @@ class Pseudo_Images(Dataset):
         self.root_dir = root_dir
         self.transform = transform
         self.img_lst=[]
-        for ind,cls_name in cls_list:
+        for ind,cls_name in enumerate(cls_lst):
             if valid_cls[ind]:
-                cls_pth=os.path.join(root_dir,cls_name)
+                cls_pth=os.path.join(root_dir,cls_name,img_type)
                 for file in os.listdir(cls_pth):
                     self.img_lst.append((os.path.join(cls_pth,file),ind))
     def __len__(self):
         return len(self.img_lst)
     def __getitem__(self,idx):
-        image=io.imread(self.img_lst[idx][0])
+        image=io.imread(self.img_lst[idx][0],as_gray=True)
         if self.transform:
             image=self.transform(image)
         return (image,self.img_lst[idx][1])
+if __name__=='__main__':
+    cls_lst=['wall','floor','cabinet','bed','chairs','sofa','table','door','window','bookshelf','picture','counter','desk','curtain','refridgerator','shower curtain','toilet','sink','bathtub','otherfurniture']
+    valid_cls=[False,False,  False    ,False,True ,False,   False,  False, False,   False,      False,    False,    False,  False,   False,          False,          False,    False,   False,  False]
+    data_transform = transforms.Compose([
+        transforms.RandomSizedCrop(224),#TODO:decide a size to cut
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor()
+    #TODO: I think some tricky normalize needs to be applied, like 1->0.999, 0->0.0001, or other?
+    ])
+    pseudo_dataset=Pseudo_Images('./pseudo_images/',cls_lst,valid_cls,img_type='mask',transform=transforms.ToTensor())
+    print(pseudo_dataset[0])
 
                  
                 

@@ -175,3 +175,5 @@ cython_debug/
 output/
 visualization/
 **commands.txt
+ops/GeometricSelectiveSearch/gss/computed_proposal_scannet
+dataset/ScanNet/scannet_all_points
