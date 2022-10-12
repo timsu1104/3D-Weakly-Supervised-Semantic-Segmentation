@@ -133,9 +133,14 @@ for epoch in range(training_epoch, training_epochs+1):
             optimizer_d.zero_grad()
             gen_valid=discriminator(gen_mask,gen_label)
             g_loss=torch.log(1-gen_valid)
-            loss+=g_loss
+            if(g_loss.nelement()!=0):
+                loss+=g_loss.mean()
 
             pseudo_image,cls_label=next(pseudo_iter)
+            pseudo_image=pseudo_image.float()
+            if use_cuda:
+                pseudo_image=pseudo_image.cuda()
+                cls_label=cls_label.cuda()
             you_want_multiple_update=0
             #TODO: This part might have some problem, you might need to update positive examples multiple times
             if you_want_multiple_update:
@@ -144,7 +149,7 @@ for epoch in range(training_epoch, training_epochs+1):
             else:
                 d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_mask.detach(),gen_label)).mean()
                 d_loss.backward()
-                optimizer_d.step()
+
             
         if cfg.loss.Gan=='WGanGP':
             #TODO:Complete WGanGP pipeline
@@ -158,6 +163,8 @@ for epoch in range(training_epoch, training_epochs+1):
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
+        if cfg.loss.Gan=='Gan':
+            optimizer_d.step()
         e_iter = time.time()
     lr_scheduler.step()
     print(
