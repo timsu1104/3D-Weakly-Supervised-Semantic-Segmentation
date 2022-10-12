@@ -69,18 +69,17 @@ class MattingModule(nn.Module):
     """
     def __init__(self, in_channels, out_channels=2) -> None:
         super().__init__()
-        self.model = nn.Linear(in_channels, out_channels)
-        
-    def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor):
-        l2=F.one_hot(dominate_class,num_classes=self.label_size).float().cuda()#??? maybe we need support for different device
-        x=torch.cat((feats,l2),dim=1)
 
+        #TODO:currently the out_channel is assumed as 1
+        self.model = nn.Linear(in_channels, out_channels*NUM_CLASSES)
+        self.out_channels=out_channels
+    def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor):
         x=self.model(x)
-        x=nn.Sigmoid(x1)
-        mask=(x<0.5)
-        x[mask]=0
+        x=nn.Sigmoid(x)
+        x=x.gather(1,dominate_class.unsqueeze(-1))
+        mask=(x>0.5)
         #TODO: cut the 0s off
-        return coords, self.model(feats)
+        return coords[mask], x[mask]
 
 class Voxelizer(nn.Module):
     """
