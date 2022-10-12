@@ -58,16 +58,3 @@ class ResidualAttentionBlock(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
         
-class LinDropAct(nn.Module):
-    def __init__(self,in_put,out_put,activation=nn.SiLU,drop_rate=0.25):
-        super(LinDropAct, self).__init__()
-        self.lin= nn.Linear(in_put,out_put)
-        self.act = activation
-        self.dropout=nn.Dropout(drop_rate)
-
-    def forward(self, x):
-        result = self.lin(x)
-        result = self.dropout(result)
-        result = self.act(result)
-
-        return result

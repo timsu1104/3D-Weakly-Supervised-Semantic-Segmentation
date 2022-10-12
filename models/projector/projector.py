@@ -14,11 +14,13 @@ class Projector(nn.Module):
         self.matting = MattingModule(in_channels, out_channels)
         self.voxelizer = Voxelizer(out_channels, resolution=resolution)
     
-    def forward(self, coords, feats, boxes, transform, view='HWZ'):
-        cropped_coords, cropped_feats,batch_lens,dominate_class = cropBox(coords, feats, boxes, transform)
+    def forward(self, coords, feats,pseudo_class, boxes, transform, view='HWZ'):
+        cropped_coords, cropped_feats,batch_lens,dominate_class,box_class = cropBox(coords, feats, pseudo_class, boxes, transform)
         segmented_coords, segmented_feats = self.matting(cropped_coords, cropped_feats,dominate_class)
+        #print(box_class)
+        #print(cropped_coords,segmented_coords)
         masks = self.voxelizer(segmented_coords, segmented_feats, view=view)
-        return masks
+        return masks,box_class
 
 if __name__ == '__main__':
     from torch.autograd import Variable

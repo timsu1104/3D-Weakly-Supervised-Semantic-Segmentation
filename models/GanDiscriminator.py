@@ -3,11 +3,37 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataset.data import NUM_CLASSES
 from utils.registry import MODEL_REGISTRY
+class LinDropAct(nn.Module):
+    def __init__(self,in_put,out_put,activation=nn.SiLU,drop_rate=0.25):
+        super(LinDropAct, self).__init__()
+        self.lin= nn.Linear(in_put,out_put)
+        self.act = activation
+        self.dropout=nn.Dropout(drop_rate)
+
+    def forward(self, x):
+        result = self.lin(x)
+        result = self.dropout(result)
+        result = self.act(result)
+
+        return result
+class ConvBNAct(nn.Module):
+    def __init__(self,in_put,out_put,kernel_size=3,stride=1,padding=1,activation=nn.SiLU,momentum=0.1):
+        super(ConvBNAct, self).__init__()
+        self.conv= nn.Conv2d(in_put,out_put,kernel_size,stride=stride,padding=padding)
+        self.act = activation
+        self.bn = nn.BatchNorm2d(out_put,momentum=momentum)
+    def forward(self, x):
+        result = self.conv(x)
+        result = self.bn(result)
+        result = self.act(result)
+
+        return result
+
 @MODEL_REGISTRY.register()
 class NaiiveCNN(nn.Module):
     def __init__(self):
         super().__init__()
-        self.label_size = label_size = NUM_CLASS
+        self.label_size = label_size = NUM_CLASSES
 
         self.conv=nn.Sequential(
             nn.Conv2d(1,32,3,stride=1,padding=1),
@@ -24,8 +50,10 @@ class NaiiveCNN(nn.Module):
 
 
     def forward(self, img, label):
-
-        l2=F.one_hot(label,num_classes=self.label_size).float().to(device)
+        print('label')
+        print(img.shape)
+        print(label.shape)
+        l2=F.one_hot(label,num_classes=self.label_size).float().to('cuda')
         x1=self.conv(img)
         x1=x1.view(label.shape[0],128)
         x1=torch.cat((x1,l2),dim=1)

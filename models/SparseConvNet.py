@@ -24,6 +24,13 @@ class SparseConvBase_(nn.Module):
             global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
         global_feats = torch.stack(global_feats)
         return global_feats
+    def postProcessing_with_PseudoLabel(self, out_feats: torch.Tensor, batch_offsets: list):
+        B = len(batch_offsets) - 1
+        global_feats = []
+        for idx in range(B):
+            global_feats.append(torch.mean(out_feats[batch_offsets[idx] : batch_offsets[idx+1]], dim=0))
+        global_feats = torch.stack(global_feats)
+        return global_feats
 
     def __init__(self, name:str, *args, **kwarg):
         super().__init__()

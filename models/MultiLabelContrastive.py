@@ -62,11 +62,12 @@ class MultiLabel(nn.Module):
     def forward(self, x, istrain=False):
         if istrain: x = x[0]
 
-        out_feats, point_feats = self.pc_encoder(x, istrain) 
+        out_feats, point_feats = self.pc_encoder(x, istrain)
         # out_feats = self.dropout(out_feats)
+        pseudo_class=self.linear(point_feats)
         global_logits = self.linear(out_feats)
 
-        if istrain: global_logits = global_logits, point_feats
+        if istrain: global_logits = global_logits, point_feats,pseudo_class
         return global_logits
 
 @MODEL_REGISTRY.register()

@@ -23,6 +23,7 @@ from utils import iou, loss
 from utils.config import cfg, verbose
 from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 from itertools import cycle
+from models.GanDiscriminator import NaiiveCNN
 # Setups
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -57,28 +58,28 @@ if cfg.loss.Gan:
     embed_width = MODEL_REGISTRY.get(cfg.pointcloud_model.name)[1].get('embed_length', lambda m : m)(cfg.pointcloud_model.m)
     projector_, proj_meta=MODEL_REGISTRY.get('Projector')
     projector = projector_(embed_width, out_channels=cfg.projector.mask_channels, resolution=cfg.projector.mask_res)
+    discriminator=NaiiveCNN()
     if use_cuda:
         projector = projector.cuda()
-    
+        discriminator=discriminator.cuda()
     #load dataset, discriminator,optimizer for discriminator
     cls_lst=['wall','floor','cabinet','bed','chair','sofa','table','door','window','bookshelf','picture','counter','desk','curtain','refridgerator','shower curtain','toilet','sink','bathtub','otherfurniture']
     valid_cls=[False,False,  False    ,False,True ,False,   False,  False, False,   False,      False,    False,    False,  False,   False,          False,          False,    False,   False,  False]
     data_transform = transforms.Compose([
-        transforms.RandomSizedCrop(224),#TODO:decide a size to cut
+        transforms.RandomSizedCrop(cfg.projector.mask_res),#TODO:decide a size to cut
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor()
     #TODO: I think some tricky normalize needs to be applied, like 1->0.999, 0->0.0001, or other?
     ])
     pseudo_dataset=Pseudo_Images('/home/shizhong/3DUNetWithText/dataset/pseudo_images',cls_lst,valid_cls,img_type='mask',transform=transforms.ToTensor())
-    discriminator_,dis_meta=MODEL_REGISTRY.get(cfg.loss.gan_name)
     # discriminator = discriminator_()
     pseudo_mask_loader=torch.utils.data.DataLoader(pseudo_dataset,
                                              batch_size=32, shuffle=True,
                                              num_workers=4)
     pseudo_iter=iter(cycle(pseudo_mask_loader))
-    print(next(pseudo_iter)[0].shape)
-    optimizer_d = optim.Adam([{'params': model.parameters(), 'initial_lr': cfg.dis_lr}], lr=cfg.dis_lr)
-    optimizer_g = optim.Adam([{'params':projector.parameters(), 'initial_lr': cfg.lr}], lr=cfg.lr)
+    #print(next(pseudo_iter)[0].shape)
+    optimizer_d = optim.Adam(discriminator.parameters(), lr=cfg.dis_lr)
+    optimizer.add_param_group({'params':projector.parameters(),'initial_lr':cfg.lr})
 
     
 for epoch in range(training_epoch, training_epochs+1):
@@ -90,6 +91,7 @@ for epoch in range(training_epoch, training_epochs+1):
     start = time.time()
     train_loss = 0
     print("Inference started.")
+    
     e_iter = 0
     for i, batch in enumerate(train_data_loader):
         s_iter = time.time()
@@ -107,9 +109,7 @@ for epoch in range(training_epoch, training_epochs+1):
             batch['y_orig'] = batch['y_orig'].cuda()
 
         loss = 0
-        
-        global_logits, point_logits = model((batch['x'], batch['text']), istrain=True)
-        # print(global_logits,meta)
+        global_logits, point_logits,pseudo_class = model((batch['x'], batch['text']), istrain=True)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
@@ -127,25 +127,22 @@ for epoch in range(training_epoch, training_epochs+1):
             projector.train()
             if use_cuda:
                 batch['x'].coords = batch['x'].coords.cuda()
-            gen_mask = projector(batch['x'].coords, point_logits, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
-            print(gen_mask.size())
-            
+            gen_mask,gen_label = projector(batch['x'].coords, point_logits,pseudo_class, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
+            #print(gen_mask.size())
             discriminator.train()
             optimizer_d.zero_grad()
-            #TODO: checkout the actual functions
-            gen_image,gen_label=pseudo_iter.next()
-            gen_valid=discriminator(gen_image,gen_label)
+            gen_valid=discriminator(gen_mask,gen_label)
             g_loss=torch.log(1-gen_valid)
             loss+=g_loss
 
-            pseudo_image,cls_label=pseudo_iter.next()
+            pseudo_image,cls_label=next(pseudo_iter)
             you_want_multiple_update=0
             #TODO: This part might have some problem, you might need to update positive examples multiple times
             if you_want_multiple_update:
                 #Do something
                 None
             else:
-                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_image.detach(),gen_label)).mean()
+                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_mask.detach(),gen_label)).mean()
                 d_loss.backward()
                 optimizer_d.step()
             
