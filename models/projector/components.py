@@ -2,8 +2,7 @@ import torch
 from torch import nn
 import sparseconvnet as scn
 from dataset.data import NUM_CLASSES
-from utils.registry import MODEL_REGISTRY
-import torch.nn.functional as F
+
 def cropBox(coords: torch.Tensor, feats: torch.Tensor, boxes: torch.Tensor, transform: tuple):
     """
     coords: (N, 3+1), 1 for batch
@@ -17,6 +16,7 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, boxes: torch.Tensor, tran
     --------
     cropped cloud, (N', 3+1), (N', C)
     """
+    device = coords.device
     coords_pool = []
     feats_pool = []
     dominate_class=[]
@@ -30,14 +30,15 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, boxes: torch.Tensor, tran
         
         batch_mask = (coords[:, -1] == batch_id)
         batch_pc = coords[batch_mask, :3]
+        print(feats.size)
+        batch_feats = feats[batch_mask]
         batch_pc = ((batch_pc \
                      - offsets[batch_id.long()]) \
                     @ rots[batch_id.long()] \
                     + centers[batch_id.long()])
-        batch_pc = torch.cat([batch_pc, torch.ones((batch_pc.size(0), 1), device=coords.device)], -1)
+        batch_pc = torch.cat([batch_pc, torch.ones((batch_pc.size(0), 1), device=device)], -1)
         batch_pc = batch_pc @ axis_align_matrix[batch_id.long()].T
         
-        batch_feats = feats[batch_mask]
         selected_mask = torch.prod(batch_pc[:, :3] >= mincoords, -1) * torch.prod(batch_pc[:, :3] <= maxcoords, -1)
         
         cropped_feats = batch_feats[selected_mask]
@@ -49,9 +50,8 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, boxes: torch.Tensor, tran
         cropped_coords[:, -1] = id
         
         #Get the main class in this box, for matting
-        box_logits=cropped_feats.mean(dim=0)
-        max_logits,max_cls=torch.max()
-        dominate_class.append(torch.full((cropped_feats.size(0),1),idx))
+        # box_logits=cropped_feats.mean(dim=0)
+        dominate_class.append(torch.full((cropped_feats.size(0),1),id, device=device))
         coords_pool.append(cropped_coords)
         feats_pool.append(cropped_feats)
     batch_lens=[]
@@ -74,8 +74,8 @@ class MattingModule(nn.Module):
         self.model = nn.Linear(in_channels, out_channels*NUM_CLASSES)
         self.out_channels=out_channels
     def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor):
-        x=self.model(x)
-        x=nn.Sigmoid(x)
+        x=self.model(feats)
+        x=torch.sigmoid(x)
         x=x.gather(1,dominate_class.unsqueeze(-1))
         mask=(x>0.5)
         #TODO: cut the 0s off

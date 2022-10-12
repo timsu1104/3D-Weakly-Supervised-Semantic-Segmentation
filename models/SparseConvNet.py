@@ -50,9 +50,10 @@ class SparseConvBase_(nn.Module):
 
         out_feats = self.encode([coords, feats])
         if istrain:
-            out_feats = self.postProcessing(out_feats, x.batch_offsets)
-        
-        return out_feats
+            out_feats_post = self.postProcessing(out_feats, x.batch_offsets)
+            return out_feats_post, out_feats
+        else:
+            return out_feats
 
 @MODEL_REGISTRY.register(embed_length=lambda m: m)
 class SparseConvUNet(SparseConvBase_):
