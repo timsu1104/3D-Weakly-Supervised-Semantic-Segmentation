@@ -42,7 +42,8 @@ train = []
 val = []
 train_files = glob.glob('dataset/ScanNet/train_processed/*.pth')
 val_files = glob.glob('dataset/ScanNet/val_processed/*.pth')
-box_path = '/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv'
+box_path = 'ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv'
+gt_box_path = 'dataset/ScanNet/scannet_all_points'
 
 def collect_files(x:str):
     """
@@ -52,7 +53,7 @@ def collect_files(x:str):
     data = torch.load(x)
     prefix = x[:-15]
     scene_name = prefix.split('/')[-1]
-    box_file = os.path.join(box_path, scene_name + '_prop.npy')
+    box_file = os.path.join(box_path, scene_name + '_prop.npy') if not cfg.use_gt else os.path.join(gt_box_path, scene_name + '_bbox.npy')
     box = np.load(box_file)
 
     result = [data, box]
@@ -150,7 +151,10 @@ def trainMerge(tbl):
     for idx,i in enumerate(tbl):
         data = train[i]
         pc = data[0]
-        box = torch.from_numpy(data[1])[:10]
+        box = torch.from_numpy(data[1])
+        print("Read", box.shape[0], "boxes.")
+        if box.shape[0] > 10: box = box[:10]
+        print("Keep", box.shape[0], "boxes.")
         scene_name = data[-1]
         ind = 2
         if pseudo_label_flag:
@@ -161,9 +165,6 @@ def trainMerge(tbl):
         assert ind == len(data) - 1
         #TODO: debug here
         (a, center), b, c, align_mat = pc # a - coords, b - colors, c - label
-        # a = a[:40000]
-        # b = b[:40000]
-        # c = c[:40000]
         
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
