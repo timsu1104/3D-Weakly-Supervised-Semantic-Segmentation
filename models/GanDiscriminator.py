@@ -22,10 +22,10 @@ class ConvBNAct(nn.Module):
         super(ConvBNAct, self).__init__()
         self.conv= nn.Conv2d(in_put,out_put,kernel_size,stride=stride,padding=padding)
         self.act = activation
-        self.bn = nn.BatchNorm2d(out_put,momentum=momentum)
+        # self.bn = nn.BatchNorm2d(out_put,momentum=momentum)
     def forward(self, x):
         result = self.conv(x)
-        result = self.bn(result)
+        # result = self.bn(result)
         result = self.act(result)
 
         return result

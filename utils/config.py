@@ -13,6 +13,8 @@ def get_parser():
     parser = argparse.ArgumentParser(description='Point Cloud Segmentation')
     parser.add_argument('--config', type=str, default='config/3DUNetWithText_scannet_default.yaml', help='path to config file')
     parser.add_argument('--verbose', action='store_true', help='whether to print detail')
+    parser.add_argument('--visualize', action='store_true', help='whether to visualize (only of use when validate)')
+    parser.add_argument('--use_gt', action='store_true', help='whether to use gt box')
 
     ### pretrain
     parser.add_argument('--pretrain', type=str, default='', help='path to pretrain model')
@@ -33,3 +35,5 @@ cfg = get_parser()
 setattr(cfg, 'exp_path', os.path.join('exp', cfg.training_name, cfg.training_name))
 
 verbose = cfg.verbose
+use_gt = cfg.use_gt
+visual_flag = cfg.visualize

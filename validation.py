@@ -10,10 +10,10 @@ import sparseconvnet as scn
 import time
 import warnings
 
-from dataset.data import val_data_loader, val, valOffsets, valLabels
+from dataset.data import val_data_loader, val, valOffsets, valLabels, valScenes
 import models # register the classes
-from utils import iou
-from utils.config import cfg
+from utils import iou, vis_seg
+from utils.config import cfg, visual_flag
 from utils.registry import MODEL_REGISTRY
 
 # Setups
@@ -40,13 +40,13 @@ with torch.no_grad():
     scn.forward_pass_multiplyAdd_count=0
     scn.forward_pass_hidden_states=0
     start = time.time()
-    for rep in range(1, 10):
+    for rep in range(1, 1+cfg.pointcloud_data.val_reps):
         for i,batch in enumerate(val_data_loader):
             if use_cuda:
                 batch['x'].feature=batch['x'].feature.cuda()
                 batch['y_orig']=batch['y_orig'].cuda()
             predictions=model(batch['x'])
-            store.index_add_(0,batch['point_ids'],predictions.cpu())
+            store.index_add_(0,batch['point_ids'], predictions.cpu())
         print(
             training_epoch,
             rep,
@@ -55,3 +55,7 @@ with torch.no_grad():
             'time', time.time() - start, 's'
             )
         mean_iou = iou.evaluate(store.max(1)[1].numpy(),valLabels)
+    
+    # visualize
+    if visual_flag:
+        vis_seg.write_seg_result(valScenes, store.max(1)[1].numpy(), valOffsets, multiprocess=True)

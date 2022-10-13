@@ -42,7 +42,8 @@ train = []
 val = []
 train_files = glob.glob('dataset/ScanNet/train_processed/*.pth')
 val_files = glob.glob('dataset/ScanNet/val_processed/*.pth')
-box_path = '/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv'
+box_path = 'ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv'
+gt_box_path = 'dataset/ScanNet/scannet_all_points'
 
 def collect_files(x:str):
     """
@@ -52,7 +53,7 @@ def collect_files(x:str):
     data = torch.load(x)
     prefix = x[:-15]
     scene_name = prefix.split('/')[-1]
-    box_file = os.path.join(box_path, scene_name + '_prop.npy')
+    box_file = os.path.join(box_path, scene_name + '_prop.npy') if not cfg.use_gt else os.path.join(gt_box_path, scene_name + '_bbox.npy')
     box = np.load(box_file)
 
     result = [data, box]
@@ -126,8 +127,8 @@ for x in torch.utils.data.DataLoader(
 
 for x in torch.utils.data.DataLoader(
         val_files,
-        collate_fn=lambda x: torch.load(x[0]), num_workers=mp.cpu_count() // 4):
-    val.append(x)
+        collate_fn=lambda x: (torch.load(x[0]), x[0][:-15].split('/')[-1]), num_workers=mp.cpu_count() // 4):
+    val.append(x) # pc, scene_name
 print('Training examples:', len(train))
 print('Validation examples:', len(val))
 
@@ -150,7 +151,10 @@ def trainMerge(tbl):
     for idx,i in enumerate(tbl):
         data = train[i]
         pc = data[0]
-        box = torch.from_numpy(data[1])[:10]
+        box = torch.from_numpy(data[1])
+        print("Read", box.shape[0], "boxes.")
+        if box.shape[0] > 10: box = box[:10]
+        print("Keep", box.shape[0], "boxes.")
         scene_name = data[-1]
         ind = 2
         if pseudo_label_flag:
@@ -161,9 +165,6 @@ def trainMerge(tbl):
         assert ind == len(data) - 1
         #TODO: debug here
         (a, center), b, c, align_mat = pc # a - coords, b - colors, c - label
-        # a = a[:40000]
-        # b = b[:40000]
-        # c = c[:40000]
         
         m=np.eye(3)+np.random.randn(3,3)*0.1
         m[0][0]*=np.random.randint(0,2)*2-1
@@ -251,20 +252,25 @@ train_data_loader = torch.utils.data.DataLoader(
 
 valOffsets=[0]
 valLabels=[]
+valScenes=[]
 for idx,x in enumerate(val):
+    x, scene_name = x
     valOffsets.append(valOffsets[-1]+x[2].size)
     valLabels.append(x[2].astype(np.int32))
+    valScenes.append(scene_name)
 valLabels=np.hstack(valLabels)
 
 def valMerge(tbl):
     locs=[]
     feats=[]
     labels=[]
+    scene_names = []
     scene_labels = []
     point_ids=[]
 
     for idx,i in enumerate(tbl):
-        (a, _),b,c,_=val[i]
+        pc, scene_name = val[i]
+        (a, _), b, c, _= pc
 
         m=np.eye(3)
         m[0][0]*=np.random.randint(0,2)*2-1
@@ -292,6 +298,7 @@ def valMerge(tbl):
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0],1).fill_(idx)],1))
         feats.append(torch.from_numpy(b))
         labels.append(torch.from_numpy(c))
+        scene_names.append(scene_name)
         scene_labels.append(torch.from_numpy(scene_label))
         point_ids.append(torch.from_numpy(np.nonzero(idxs)[0]+valOffsets[i]))
     locs=torch.cat(locs,0)
@@ -309,7 +316,8 @@ def valMerge(tbl):
         'x': edict(input_batch), 
         'y_orig': labels.long(), 
         'y': scene_labels.long(), 
-        'id': tbl, 
+        'id': tbl,
+        'scene_name': scene_names, 
         'point_ids': point_ids}
         
 val_data_loader = torch.utils.data.DataLoader(
@@ -317,6 +325,6 @@ val_data_loader = torch.utils.data.DataLoader(
     batch_size=batch_size,
     collate_fn=valMerge,
     num_workers=4,
-    shuffle=True,
+    shuffle=False,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )

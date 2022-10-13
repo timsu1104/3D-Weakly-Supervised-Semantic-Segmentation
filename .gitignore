@@ -168,6 +168,7 @@ cython_debug/
 **/pseudo_label
 **/pseudo_images
 **/exp
+**/vis
 **.tar
 **.pth
 **-main

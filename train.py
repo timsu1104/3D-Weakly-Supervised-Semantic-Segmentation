@@ -109,7 +109,9 @@ for epoch in range(training_epoch, training_epochs+1):
             batch['y_orig'] = batch['y_orig'].cuda()
 
         loss = 0
+        start = time.time()
         global_logits, point_logits,pseudo_class = model((batch['x'], batch['text']), istrain=True)
+        print('backbone', time.time()-start)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
@@ -127,8 +129,11 @@ for epoch in range(training_epoch, training_epochs+1):
             projector.train()
             if use_cuda:
                 batch['x'].coords = batch['x'].coords.cuda()
+            start = time.time()
             gen_mask,gen_label = projector(batch['x'].coords, point_logits,pseudo_class, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
-            #print(gen_mask.size())
+            print('projection', time.time()-start)
+            # print(gen_mask.size())
+            print("GENMASK", gen_mask, gen_mask.size())
             discriminator.train()
             optimizer_d.zero_grad()
             gen_valid=discriminator(gen_mask,gen_label)

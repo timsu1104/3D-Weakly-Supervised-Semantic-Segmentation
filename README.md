@@ -35,3 +35,12 @@ The followings are backbones available now.
 If you want to add new module, please register your module under `models/` and specity `embed_length` if it is a point cloud encoder. Then switch the backbone's name in the config. 
 
 Note that the input should be `[coords, feats]` and the output should be logits for every points. If you are using a **SparseConvNet-based point cloud encoder**, just inherit from the class `SparseConvBase_` and **redefine the structure** under `getEncoder(*args)`. The rest will be handled automatically. 
+
+### Visualization
+To visualize the result, run
+```bash
+CUDA_VISIBLE_DEVICES=$SELECTED_DEVICE$ python -u validation.py --config config/$CONFIG_NAME$ --visualize
+```
+The palette is
+
+## <font color="#AEC7E8">wall</font> <font color="#98DF8A">floor</font> <font color="#1F77B4">cabinet</font> <font color="#FFBB78">bed</font> <font color="#BCBD22">chair</font> <font color="#8C564B">sofa</font> <font color="#FF9896">table</font> <font color="#D62728">door</font> <font color="#C5B0D5">window</font> <font color="#9467BD">bookshelf</font> <font color="#C49C94">picture</font> <font color="#17BECF">counter</font> <font color="#F7B6D2">desk</font> <font color="#DBDB8D">curtain</font> <font color="#FF7F0E">refrigerator</font> <font color="#9EDAE5">shower curtain</font> <font color="#2CA02C">toilet</font> <font color="#708090">sink</font> <font color="#E377C2">bathtub</font> <font color="#5254A3">other furniture</font>
