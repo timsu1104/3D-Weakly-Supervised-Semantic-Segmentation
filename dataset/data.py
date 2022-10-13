@@ -153,8 +153,8 @@ def trainMerge(tbl):
         pc = data[0]
         box = torch.from_numpy(data[1])
         print("Read", box.shape[0], "boxes.")
-        if box.shape[0] > 10: box = box[:10]
-        print("Keep", box.shape[0], "boxes.")
+        # if box.shape[0] > 64: box = box[:64]
+        # print("Keep", box.shape[0], "boxes.")
         scene_name = data[-1]
         ind = 2
         if pseudo_label_flag:

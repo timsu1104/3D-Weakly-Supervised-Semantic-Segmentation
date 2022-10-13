@@ -1,5 +1,5 @@
 GENERAL:
-  training_name: pseudo_generator # scene_level_with_fcnet_uppool
+  training_name: scene_level_with_fcnet_uppool
   model_name: MultiLabel
 
 DATA:
