@@ -79,19 +79,22 @@ class MattingModule(nn.Module):
         #TODO:currently the out_channel is assumed as 1
         self.model = nn.Linear(in_channels, out_channels*NUM_CLASSES)
         self.out_channels=out_channels
-    def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor):
+    def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor,box_dominate_class):
         x=self.model(feats)
         x=torch.sigmoid(x)
-        print(dominate_class)
+        #print(dominate_class)
         
         x=x.gather(1,dominate_class)#get the mask of the dominate class
-        print(x.shape)
+        #print(x.shape)
         mask=(x>0.5)
         new_coords=coords[mask.squeeze(1),:]
         out_feat=x[mask]
         if(x.nelement()!=0):
             out_feat=x[mask].unsqueeze(1)
-        return new_coords, out_feat
+        #print(new_coords[:,-1])
+        appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
+        appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
+        return new_coords, out_feat,box_dominate_class[appear_mask]
 
 class Voxelizer(nn.Module):
     """
@@ -111,7 +114,7 @@ class Voxelizer(nn.Module):
             scn.SparseToDense(3, channels)
         )
     # maxpooling
-    def forward(self, coords: torch.Tensor, feats: torch.Tensor, view='HWZ'):
+    def forward(self, coords: torch.Tensor, feats: torch.Tensor,box_class, view='HWZ'):
         coords[:, :-1] = coords[:, :-1] * self.res
         #print("Start voxelize")
         voxel = self.voxelizer([coords, feats]) # [B, C, H, W, Z]
@@ -120,16 +123,20 @@ class Voxelizer(nn.Module):
         #print(voxel.size())
         assert H == W == Z == self.res
         assert len(view) > 0, "view not selected!"
-        
+        view_cnt=0
         view_mask = []
         if 'H' in view:
             view_mask.append(torch.max(voxel, dim=-3)[0])
+            view_cnt+=1
         if 'W' in view:
             view_mask.append(torch.max(voxel, dim=-2)[0])
+            view_cnt+=1
         if 'Z' in view:
             view_mask.append(torch.max(voxel, dim=-1)[0])
+            view_cnt+=1
+        img_class=box_class.repeat(view_cnt)
         view_mask = torch.cat(view_mask) if len(view_mask) > 0 else view_mask[0]
-        return view_mask
+        return view_mask,img_class
     
 if __name__ == '__main__':
     import numpy as np

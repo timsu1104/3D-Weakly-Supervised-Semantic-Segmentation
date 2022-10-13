@@ -16,11 +16,11 @@ class Projector(nn.Module):
     
     def forward(self, coords, feats,pseudo_class, boxes, transform, view='HWZ'):
         cropped_coords, cropped_feats,batch_lens,dominate_class,box_class = cropBox(coords, feats, pseudo_class, boxes, transform)
-        segmented_coords, segmented_feats = self.matting(cropped_coords, cropped_feats,dominate_class)
+        segmented_coords, segmented_feats,seg_box_class= self.matting(cropped_coords, cropped_feats,dominate_class,box_class)
         #print(box_class)
         #print(cropped_coords,segmented_coords)
-        masks = self.voxelizer(segmented_coords, segmented_feats, view=view)
-        return masks,box_class
+        masks,img_class = self.voxelizer(segmented_coords, segmented_feats,seg_box_class, view=view)
+        return masks,img_class
 
 if __name__ == '__main__':
     from torch.autograd import Variable

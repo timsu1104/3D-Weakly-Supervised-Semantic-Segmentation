@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataset.data import NUM_CLASSES
 from utils.registry import MODEL_REGISTRY
+import time
 class LinDropAct(nn.Module):
     def __init__(self,in_put,out_put,activation=nn.SiLU,drop_rate=0.25):
         super(LinDropAct, self).__init__()
@@ -45,8 +46,8 @@ class NaiiveCNN(nn.Module):
             ConvBNAct(64,128,3,stride=2,padding=1,activation=nn.LeakyReLU(0.2)),#4
             nn.AdaptiveAvgPool2d(1)
         )
-        #self.fc1=LinDropAct(128+self.label_size,256,activation=nn.LeakyReLU(0.2))
-        self.fc1=LinDropAct(128,256,activation=nn.LeakyReLU(0.2))
+        self.fc1=LinDropAct(128+self.label_size,256,activation=nn.LeakyReLU(0.2))
+        #self.fc1=LinDropAct(128,256,activation=nn.LeakyReLU(0.2))
         self.fc2=nn.Linear(256,1)
 
 
@@ -54,14 +55,15 @@ class NaiiveCNN(nn.Module):
         #print('label')
         #print(img.shape)
         #print(label.shape)
-        #l2=F.one_hot(label,num_classes=self.label_size).float().to('cuda')
-        
+        l2=F.one_hot(label,num_classes=self.label_size).float().to('cuda')
+        #s_iter = time.time()
         x1=self.conv(img)
         x1=x1.view(img.shape[0],128)
-        #x1=torch.cat((x1,l2),dim=1)
+        x1=torch.cat((x1,l2),dim=1)
         x1=self.fc1(x1)
         x1=self.fc2(x1)
         x1=nn.Sigmoid()(x1)
+        #print(time.time()-s_iter)
         return x1
 
 

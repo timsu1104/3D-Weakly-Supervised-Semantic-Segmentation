@@ -147,7 +147,11 @@ for epoch in range(training_epoch, training_epochs+1):
                 #Do something
                 None
             else:
-                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()-torch.log(1-discriminator(gen_mask.detach(),gen_label)).mean()
+                
+                d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()
+                adv_loss=-torch.log(1-discriminator(gen_mask.detach(),gen_label))
+                if adv_loss.nelement()!=0:
+                    d_loss+=adv_loss.mean()
                 d_loss.backward()
 
             
