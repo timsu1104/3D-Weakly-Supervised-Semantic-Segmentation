@@ -14,7 +14,7 @@ DATA:
 
 STRUCTURE:
   pointcloud_model:
-    name: SparseConvFCNetDirectUpPoolLight
+    name: SparseConvFCNetDirectUpPool
     m: 16 # 16 or 32
     dimension: 3
     full_scale: 4096

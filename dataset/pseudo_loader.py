@@ -5,7 +5,7 @@ from skimage import io, transform
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-
+from PIL import Image
 class Pseudo_Images(Dataset):
     def __init__(self, root_dir, cls_lst,valid_cls,img_type='mask',transform=None):
         """
@@ -31,8 +31,9 @@ class Pseudo_Images(Dataset):
     def __len__(self):
         return len(self.img_lst)
     def __getitem__(self,idx):
-        image=io.imread(self.img_lst[idx][0],as_gray=True)
+        image=Image.open(self.img_lst[idx][0]).convert('L')
         if self.transform:
+            #print(type(image))
             image=self.transform(image)
         return (image,self.img_lst[idx][1])
 if __name__=='__main__':

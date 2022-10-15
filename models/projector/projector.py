@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from utils.registry import MODEL_REGISTRY
 
-from .components import cropBox, MattingModule, Voxelizer
+from .components import cropBox, MattingModule,DirectMattingModule, Voxelizer
 
 @MODEL_REGISTRY.register()
 class Projector(nn.Module):
@@ -11,12 +11,13 @@ class Projector(nn.Module):
     """
     def __init__(self, in_channels, out_channels=2, resolution=256) -> None:
         super().__init__()
-        self.matting = MattingModule(in_channels, out_channels)
+        self.matting = DirectMattingModule(in_channels, out_channels)
         self.voxelizer = Voxelizer(out_channels, resolution=resolution)
     
     def forward(self, coords, feats,pseudo_class, boxes, transform, view='HWZ'):
         cropped_coords, cropped_feats,batch_lens,dominate_class,box_class = cropBox(coords, feats, pseudo_class, boxes, transform)
         segmented_coords, segmented_feats,seg_box_class= self.matting(cropped_coords, cropped_feats,dominate_class,box_class)
+        
         #print(box_class)
         #print(cropped_coords,segmented_coords)
         masks,img_class = self.voxelizer(segmented_coords, segmented_feats,seg_box_class, view=view)

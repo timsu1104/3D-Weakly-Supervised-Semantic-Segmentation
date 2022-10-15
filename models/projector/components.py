@@ -54,12 +54,14 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         #Get the main class in this box, for matting
         #print(cropped_feats.shape)
         box_logits=cropped_class.mean(dim=0)
+        print(box_logits)
         #print(box_logits)
         max_logits,max_cls=box_logits.max(0)
         dominate_class.append(torch.full((cropped_class.size(0),1),max_cls, device=device))
         box_dominate_class.append(max_cls)
         coords_pool.append(cropped_coords)
-        feats_pool.append(cropped_feats)
+        #TODO：change back to feats
+        feats_pool.append(cropped_class)
     batch_lens=[]
     for feat in feats_pool:
         batch_lens.append(feat.size(0))
@@ -82,7 +84,7 @@ class MattingModule(nn.Module):
     def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor,box_dominate_class):
         x=self.model(feats)
         x=torch.sigmoid(x)
-        #print(dominate_class)
+        print(box_dominate_class)
         
         x=x.gather(1,dominate_class)#get the mask of the dominate class
         #print(x.shape)
@@ -95,7 +97,32 @@ class MattingModule(nn.Module):
         appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
         appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
         return new_coords, out_feat,box_dominate_class[appear_mask]
+class DirectMattingModule(nn.Module):
+    """
+    Matting the pointcloud
+    """
+    def __init__(self, in_channels, out_channels=2) -> None:
+        super().__init__()
 
+        #TODO:currently the out_channel is assumed as 1
+        #self.model = nn.Linear(in_channels, out_channels*NUM_CLASSES)
+        self.out_channels=out_channels
+    def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor,box_dominate_class):
+
+        x=torch.sigmoid(feats)
+        print(box_dominate_class)
+        
+        x=x.gather(1,dominate_class)#get the mask of the dominate class
+        #print(x.shape)
+        mask=(x>0.5)
+        new_coords=coords[mask.squeeze(1),:]
+        out_feat=x[mask]
+        if(x.nelement()!=0):
+            out_feat=x[mask].unsqueeze(1)
+        #print(new_coords[:,-1])
+        appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
+        appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
+        return new_coords, out_feat,box_dominate_class[appear_mask]
 class Voxelizer(nn.Module):
     """
     Parameters

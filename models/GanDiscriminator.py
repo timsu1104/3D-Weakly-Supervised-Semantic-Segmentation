@@ -57,7 +57,7 @@ class NaiiveCNN(nn.Module):
         #print(label.shape)
         l2=F.one_hot(label,num_classes=self.label_size).float().to('cuda')
         #s_iter = time.time()
-        x1=self.conv(img)
+        x1=self.conv(img-0.5)
         x1=x1.view(img.shape[0],128)
         x1=torch.cat((x1,l2),dim=1)
         x1=self.fc1(x1)

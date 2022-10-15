@@ -14,7 +14,7 @@ import warnings
 from torchvision import transforms, utils
 from utils import iou, loss
 from utils.config import *
-
+import torchvision.utils as vutils
 from dataset.pseudo_loader import Pseudo_Images
 from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 
@@ -38,6 +38,8 @@ writer = SummaryWriter(os.path.join('exp', TRAIN_NAME))
 
 model_, model_meta = MODEL_REGISTRY.get(cfg.model_name)
 model = model_(cfg.pointcloud_model, cfg.text_model) if cfg.has_text else model_(cfg.pointcloud_model)
+model.load_state_dict(torch.load('/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/exp/scene_level_with_fcnet_uppool/scene_level_with_fcnet_uppool-000000256-model.pth'), strict=False)
+model.cuda()
 if use_cuda:
     model=model.cuda()
 
@@ -66,12 +68,15 @@ if cfg.loss.Gan:
     cls_lst=['wall','floor','cabinet','bed','chair','sofa','table','door','window','bookshelf','picture','counter','desk','curtain','refridgerator','shower curtain','toilet','sink','bathtub','otherfurniture']
     valid_cls=[False,False,  False    ,False,True ,False,   False,  False, False,   False,      False,    False,    False,  False,   False,          False,          False,    False,   False,  False]
     data_transform = transforms.Compose([
-        transforms.RandomSizedCrop(cfg.projector.mask_res),#TODO:decide a size to cut
+        transforms.Resize(64),#TODO:decide a size to cut
+        #transforms.RandomSizedCrop(64),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor()
     #TODO: I think some tricky normalize needs to be applied, like 1->0.999, 0->0.0001, or other?
     ])
-    pseudo_dataset=Pseudo_Images('/home/shizhong/3DUNetWithText/dataset/pseudo_images',cls_lst,valid_cls,img_type='mask',transform=transforms.ToTensor())
+    pseudo_dataset=Pseudo_Images('/home/shizhong/3DUNetWithText/dataset/pseudo_images',cls_lst,valid_cls,img_type='test',transform=data_transform)
+    print("Size of pseudo dataset:")
+    print(len(pseudo_dataset))
     # discriminator = discriminator_()
     pseudo_mask_loader=torch.utils.data.DataLoader(pseudo_dataset,
                                              batch_size=32, shuffle=True,
@@ -81,7 +86,7 @@ if cfg.loss.Gan:
     optimizer_d = optim.Adam(discriminator.parameters(), lr=cfg.dis_lr)
     optimizer.add_param_group({'params':projector.parameters(),'initial_lr':cfg.lr})
 
-    
+iteration_cnt=0
 for epoch in range(training_epoch, training_epochs+1):
     print("Starting epoch", epoch)
     model.train()
@@ -93,7 +98,9 @@ for epoch in range(training_epoch, training_epochs+1):
     print("Inference started.")
     
     e_iter = 0
+    first=0
     for i, batch in enumerate(train_data_loader):
+        iteration_cnt+=1
         s_iter = time.time()
         if verbose: print("Data fetch elapsed {}s".format(s_iter - e_iter))
 
@@ -130,19 +137,26 @@ for epoch in range(training_epoch, training_epochs+1):
             if use_cuda:
                 batch['x'].coords = batch['x'].coords.cuda()
             start = time.time()
+            cls_mask=torch.Tensor(valid_cls).cuda()
             gen_mask,gen_label = projector(batch['x'].coords, point_logits,pseudo_class, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
+            #print(gen_mask)
             print('projection', time.time()-start)
-            # print(gen_mask.size())
-            print("GENMASK", gen_mask, gen_mask.size())
+            gen_mask=gen_mask[torch.gather(cls_mask,0,gen_label).bool()]
+            gen_label=gen_label[torch.gather(cls_mask,0,gen_label).bool()]
+            print(gen_mask.size())
+            #print("GENMASK", gen_mask, gen_mask.size())
             discriminator.train()
             optimizer_d.zero_grad()
             gen_valid=discriminator(gen_mask,gen_label)
             g_loss=torch.log(1-gen_valid)
             if(g_loss.nelement()!=0):
                 loss+=g_loss.mean()
+                writer.add_scalar("Dicriminator Loss:Generator", g_loss.mean().item(), iteration_cnt)
+            
 
             pseudo_image,cls_label=next(pseudo_iter)
             pseudo_image=pseudo_image.float()
+            #print(pseudo_image.max())
             if use_cuda:
                 pseudo_image=pseudo_image.cuda()
                 cls_label=cls_label.cuda()
@@ -152,13 +166,16 @@ for epoch in range(training_epoch, training_epochs+1):
                 #Do something
                 None
             else:
-                
                 d_loss=-torch.log(discriminator(pseudo_image,cls_label)).mean()
+                writer.add_scalar("Dicriminator Loss: real(glide)", d_loss.mean().item(),iteration_cnt)
                 adv_loss=-torch.log(1-discriminator(gen_mask.detach(),gen_label))
                 if adv_loss.nelement()!=0:
                     d_loss+=adv_loss.mean()
                 d_loss.backward()
-
+            if first==0 and gen_mask.shape[0]!=0:
+                first=1
+                writer.add_image('target imgs', vutils.make_grid(pseudo_image, nrow=4))
+                writer.add_image('gen imgs', vutils.make_grid(gen_mask, nrow=4))
             
         if cfg.loss.Gan=='WGanGP':
             #TODO:Complete WGanGP pipeline
@@ -175,6 +192,7 @@ for epoch in range(training_epoch, training_epochs+1):
         if cfg.loss.Gan=='Gan':
             optimizer_d.step()
         e_iter = time.time()
+        writer.add_scalar("Train Loss", loss.item(), iteration_cnt)
     lr_scheduler.step()
     print(
         epoch,
@@ -183,7 +201,7 @@ for epoch in range(training_epoch, training_epochs+1):
         'MegaHidden', scn.forward_pass_hidden_states/len(train)/1e6,
         'time', time.time() - start, 's'
         )
-    writer.add_scalar("Train Loss", train_loss/(i+1), epoch)
+    writer.add_scalar("Epoch Train Loss", train_loss/(i+1), epoch)
     scn.checkpoint_save(model,exp_name,'model',epoch, use_cuda)
     print("Checkpoint saved.")
 
