@@ -32,7 +32,8 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         batch_mask = (coords[:, -1] == batch_id)
         batch_pc = coords[batch_mask, :3]
         #print(feats.size)
-        batch_feats = feats[batch_mask]
+        # batch_feats = feats[batch_mask]
+        
         batch_class = pseudo_class[batch_mask]
         batch_pc = ((batch_pc \
                      - offsets[batch_id.long()]) \
@@ -41,9 +42,10 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         batch_pc = torch.cat([batch_pc, torch.ones((batch_pc.size(0), 1), device=device)], -1)
         batch_pc = batch_pc @ axis_align_matrix[batch_id.long()].T
         
-        selected_mask = torch.prod(batch_pc[:, :3] >= mincoords, -1) * torch.prod(batch_pc[:, :3] <= maxcoords, -1)
+        selected_mask = (torch.prod(batch_pc[:, :3] >= mincoords, -1) * torch.prod(batch_pc[:, :3] <= maxcoords, -1)).bool()
+        feats_sel_mask = batch_mask.masked_scatter(batch_mask, selected_mask)
         
-        cropped_feats = batch_feats[selected_mask]
+        cropped_feats = feats[feats_sel_mask]
         cropped_coords = batch_pc[selected_mask]
         cropped_class = batch_class[selected_mask]
         # centering

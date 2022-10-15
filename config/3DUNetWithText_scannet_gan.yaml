@@ -6,7 +6,7 @@ DATA:
   pointcloud_data:
     scale: 50 #Voxel size: 1/scale - 2cm
     val_reps: 3 # Number of test views, 1 or more
-    batch_size: 1
+    batch_size: 2
     elastic_deformation: True
   label: scene_level
   in_radius: 2
