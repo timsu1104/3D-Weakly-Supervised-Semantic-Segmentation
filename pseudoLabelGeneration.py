@@ -25,6 +25,7 @@ use_cuda = torch.cuda.is_available()
 saving_path = osp.join(cfg.path, cfg.training_name + f'_thresh{cfg.threshold}')
 os.makedirs(saving_path, exist_ok=True)
 exp_name=cfg.exp_path
+adopt_all = cfg.adopt_all_labels
 
 model_, model_meta = MODEL_REGISTRY.get(cfg.model_name)
 model=model_(cfg.pointcloud_model, cfg.text_model) if cfg.has_text else model_(cfg.pointcloud_model)
@@ -48,7 +49,10 @@ with torch.no_grad():
             batch['x'].feature=batch['x'].feature.cuda()
             batch['y_orig']=batch['y_orig'].cuda()
         predictions=model(batch['x'])
-        pseudo_labels, num = stats.get_pseudo_labels(predictions, threshold=thresh, show_stats=False)
+        if adopt_all:
+            pseudo_labels, num = stats.get_pseudo_labels_all(predictions, show_stats=False)
+        else:
+            pseudo_labels, num = stats.get_pseudo_labels(predictions, threshold=thresh, show_stats=False)
         num_pseudo_labels += num
         total_label_num += pseudo_labels.size(0)
         correct, _ = stats.assess_label_quality(pseudo_labels, batch['y_orig'])

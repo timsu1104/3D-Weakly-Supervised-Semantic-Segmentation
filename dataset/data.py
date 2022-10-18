@@ -1,9 +1,9 @@
+
 # Copyright 2016-present, Facebook, Inc.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 NUM_CLASSES = 20
 
 import torch, numpy as np
@@ -110,11 +110,13 @@ print('Validation examples:', len(val))
 
 
 def trainMerge(tbl):
+    #print(tbl)
     locs=[]
     feats=[]
     labels=[]
     scene_labels = []
     scene_names = []
+    scene_names_with_texts = []
     batch_offsets = [0]
     has_text = []
     texts = []
@@ -163,7 +165,9 @@ def trainMerge(tbl):
         if text_flag and len(text) > 0:
             has_text.append(idx)
             text = tokenize(text)
+            text = torch.cat([text, torch.LongTensor(text.shape[0], 1).fill_(idx)], 1)
             texts.append(text)
+            scene_names_with_texts.append(scene_name)
 
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
@@ -177,7 +181,10 @@ def trainMerge(tbl):
     feats = torch.cat(feats, 0)
     labels = torch.cat(labels, 0) # B, N
     scene_labels = torch.stack(scene_labels) # B, NumClasses
-    texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
+    # texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
+
+    texts = torch.cat(texts, 0) if len(has_text) > 0 else torch.tensor(-1) 
+    # store the index of scenes that have texts 
     has_text = torch.tensor(has_text).long()
 
     input_batch = {
@@ -192,6 +199,7 @@ def trainMerge(tbl):
         'y': scene_labels, 
         'text': [texts, has_text],
         'id': tbl,
+        'scene_names_with_texts': scene_names_with_texts,
         'scene_names': scene_names
         }
 

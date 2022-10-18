@@ -1,0 +1,21 @@
+PATH:
+  folder: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset'
+  Output_path: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset/sofa_picture_with_white_bg'
+
+GENERATION:
+  cls: 'sofa_picture_with_white_bg'
+  text_format: "sofa"
+  prefix: 'This is a ficture of a'
+  suffix: 'with white background'
+  device_num: 5
+  total_device: 1
+
+FILTERING:
+  bgcolor: 'white'
+  mean_thresh: 200
+  proportion_thresh: 0.55
+  color_thresh: 240
+
+BLUR:
+  blur_radius: 1
+  blur_samples: 20

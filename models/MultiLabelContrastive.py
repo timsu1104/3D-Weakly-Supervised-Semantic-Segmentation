@@ -4,6 +4,9 @@ import torch.nn as nn
 from dataset.data import NUM_CLASSES
 from utils.registry import MODEL_REGISTRY
 
+path = '/home/zhuhe/3DUNetWithText/3DUNetWithText/dataset/text_feats/'
+use_cuda = torch.cuda.is_available()
+
 @MODEL_REGISTRY.register()
 class MultiLabelContrastive(nn.Module):
     def __init__(self, pc_config, text_config):
@@ -18,17 +21,29 @@ class MultiLabelContrastive(nn.Module):
         self.text_linear = nn.Linear(text_config.width, embed_width)
         self.linear = nn.Linear(embed_width, NUM_CLASSES)
 
-    def forward(self, x, istrain=False):
+    def forward(self, x, scene_names_with_texts, istrain=False):
         if istrain:
             pc_input, (text, has_text) = x
             batch_offsets = pc_input.batch_offsets
 
+            text_feats = []
             if has_text.size(0) > 0:
-                BText, NumText, Length = text.size()
-                text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
-                text_feats = self.text_linear(text_feats)
+                for scene in scene_names_with_texts:
+                    text_feat = torch.load(path+scene+'.pt')
+                    if use_cuda:
+                        text_feat = text_feat.cuda()
+                    text_feats.append(text_feat)
+
+                text_feats = torch.cat(text_feats, 0)
             else:
                 text_feats = -1
+            
+            # if has_text.size(0) > 0:
+            #     BText, NumText, Length = text.size()
+            #     text_feats = self.text_encoder(text.view(-1, Length), as_dict=True)['x'].view(BText, NumText, -1)
+            #     text_feats = self.text_linear(text_feats)
+            # else:
+            #     text_feats = -1
 
             out_feats = self.pc_encoder(pc_input) # B * NumPts, C
 

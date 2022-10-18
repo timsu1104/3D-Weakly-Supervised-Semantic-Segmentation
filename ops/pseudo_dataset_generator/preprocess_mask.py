@@ -3,6 +3,8 @@ import numpy as np, torch
 import os, glob, shutil
 from tqdm import tqdm, trange
 from tqdm.contrib import tzip
+import sys
+sys.path.append('/home/zhuhe/3DNetWithText_v10.9/3DUNetWithText/ops/')
 from point2mask.point2mask_modules import Pixel2Mask
 from time import time
 from configs import cfg
@@ -29,7 +31,7 @@ start = time()
 masks = []
 for i in trange(len(images) // Batch_size + 1):
     batch = images[i * Batch_size: min((i+1) * Batch_size, len(images))]
-    masks.append(Pixel2Mask(radius=Radius, nsample=Nsample)(batch, 256))
+    masks.append(Pixel2Mask(radius=Radius, nsample=Nsample)(batch, 64))
 masks = torch.cat(masks, 0)
 filter_num = 0
 for fn, mask in tzip(files, masks):

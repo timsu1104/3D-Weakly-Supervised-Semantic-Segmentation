@@ -24,3 +24,10 @@ STRUCTURE:
 
 Training:
   epochs: 512
+
+PSEUDO_LABEL:
+  path: dataset/ScanNet/pseudo_label_all
+  suffix: _pseudo_label.pth
+  threshold: 0.71
+  progressbar: True
+  adopt_all_labels: True

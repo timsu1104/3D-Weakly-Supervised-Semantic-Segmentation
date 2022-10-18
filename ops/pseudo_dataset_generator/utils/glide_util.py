@@ -11,6 +11,12 @@ import torch.nn.functional as F
 
 from PIL import Image
 
+import sys
+# print(sys.path)
+sys.path.append('/home/zhuhe/3DNetWithText_v10.9/3DUNetWithText/ops/pseudo_dataset_generator/utils/')
+# print(sys.path)
+
+# import glide_text2im
 from glide_text2im.clip.model_creation import create_clip_model
 from glide_text2im.download import load_checkpoint
 from glide_text2im.model_creation import (
@@ -70,6 +76,7 @@ def save_images(batch: torch.Tensor, tags: List[str] =None, path:str='outputs/',
         imgs = [Image.fromarray(arr.permute(1, 2, 0).numpy()) for arr in scaled]
         if tags is None:
             for i, img in enumerate(imgs): 
+                print(os.path.join(path, str(i) + ext))
                 img.save(os.path.join(path, str(i) + ext), quality=95)
         elif type(tags) == str:
             for i, img in enumerate(imgs): 
@@ -91,6 +98,7 @@ def glide(
     device,
     guidance_scale = 3.0, 
     path:str='outputs/', 
+    tags=None,
     ext:str=".jpg", 
     verbose=False):
     """
@@ -119,6 +127,7 @@ def glide(
     cond_fn = clip_model.cond_fn(prompts, guidance_scale)
 
     # Sample from the base model.
+    # print('sample!')
     glide_model.del_cache()
     samples = diffusion.p_sample_loop(
         glide_model,
@@ -133,8 +142,9 @@ def glide(
 
     if verbose:
         # Show the output
-        save_images(samples, prompts, path=path, ext=ext)
-        print("the shape of samples is {}".format(samples.size()))
+        # print('!')
+        save_images(samples, tags=tags, path=path, ext=ext)
+        # print("the shape of samples is {}".format(samples.size()))
     
     return samples
 
@@ -221,10 +231,12 @@ def generate_single_batch(
     prefix = prefix.strip()
     suffix = suffix.strip()
     prompts = [' '.join([prefix, desc.strip(), suffix]) for desc in texts]
-    pseudo_images = glide(prompts, *glide_config, path=path, ext=ext, verbose=verbose)
-    upsampled_images = glide_upsampler(prompts, pseudo_images, *upsampler_config, path=path, tags=tags, ext=ext, verbose=~quiet)
-    upsampled_images = torch.round((upsampled_images + 1) * 255 / 2).clamp(0,255).to(torch.uint8)
-    return upsampled_images
+    # print(verbose)
+    pseudo_images = glide(prompts, *glide_config, path=path, tags=tags, ext=ext, verbose=True)
+    # upsampled_images = glide_upsampler(prompts, pseudo_images, *upsampler_config, path=path, tags=tags, ext=ext, verbose=~quiet)
+    # upsampled_images = torch.round((upsampled_images + 1) * 255 / 2).clamp(0,255).to(torch.uint8)
+    psuedo_images = torch.round((pseudo_images + 1) * 255 / 2).clamp(0,255).to(torch.uint8)
+    return pseudo_images
 
 
 def generate_raw_image(
@@ -237,7 +249,10 @@ def generate_raw_image(
     path:str='outputs/', 
     ext:str=".jpg"):
 
+    print(path)
+
     start_iter = int(device[-1]) * length
+    # start_iter = 0
     device = torch.device(device)
 
     # Setup

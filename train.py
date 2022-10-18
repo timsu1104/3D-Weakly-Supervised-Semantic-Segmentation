@@ -80,14 +80,16 @@ for epoch in range(training_epoch, training_epochs+1):
 
         loss = 0
         
-        global_logits, meta = model((batch['x'], batch['text']), istrain=True)
+        scene_names_with_texts = batch.get('scene_names_with_texts', None)
+
+        global_logits, meta = model((batch['x'], batch['text']), scene_names_with_texts, istrain=True)
         if cfg.loss.Classification:
             cls_loss, cls_meta = LOSS_REGISTRY.get('Classification')
             loss += cls_loss(global_logits, batch['y'])
             if cfg.label == 'pseudo':
                 loss += cls_loss(meta, batch['y_orig'])
         if cfg.has_text and cfg.loss.TextContrastive: 
-            contrastive_loss, meta = LOSS_REGISTRY.get('TextContrastive')
+            contrastive_loss, contrastive_meta = LOSS_REGISTRY.get('TextContrastive')
             loss += contrastive_loss(*meta)
         e1_iter = time.time()
         if verbose: print("Forwarding elapsed {}s".format(e1_iter - s_iter))

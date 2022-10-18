@@ -1,0 +1,19 @@
+PATH:
+  folder: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset'
+  Output_path: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset/sink_picture_with_green_bg'
+
+GENERATION:
+  cls: 'sink_picture_with_green_bg'
+  text_format: "sink"
+  prefix: 'This is a ficture of a'
+  suffix: 'with green background'
+
+FILTERING:
+  bgcolor: 'green'
+  mean_thresh: 130
+  proportion_thresh: 0.55
+  color_thresh: 200
+
+BLUR:
+  blur_radius: 1
+  blur_samples: 20

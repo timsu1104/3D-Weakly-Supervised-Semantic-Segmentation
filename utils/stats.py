@@ -37,6 +37,26 @@ def get_pseudo_labels(logits: torch.Tensor, scene_label: torch.Tensor, batch_off
     num_pseudo_labels = torch.sum(conf >= threshold)
     return pseudo_labels, num_pseudo_labels
 
+def get_pseudo_labels_all(logits: torch.Tensor, scene_label: torch.Tensor, batch_offsets: list, show_stats=False):
+    """
+    adopt all generated labels as pseudo labels
+    """
+    logits = preprocess_logits(logits, scene_label, batch_offsets)
+    
+    if show_stats:
+        print("STATISTICS")
+        print(f"Confidence ranges from {logits.min()} to {logits.max()}, detail as below. ")
+        sort_logits = torch.sort(logits.flatten(), descending=True)[0]
+        pred_num = sort_logits.size(0)
+        percentages = [1, 2, 3, 5, 10, 20, 30, 50, 70]
+        for per in percentages:
+            print(f"{per}% {sort_logits[pred_num // 100 * per]}")
+
+    _, pseudo_labels = logits.max(dim=-1)
+    num_pseudo_labels = len(pseudo_labels)
+    return pseudo_labels, num_pseudo_labels
+
+
 def assess_label_quality(pseudo_labels, labels):
     mask = pseudo_labels != -100
     correct = torch.sum(pseudo_labels[mask] == labels[mask])
