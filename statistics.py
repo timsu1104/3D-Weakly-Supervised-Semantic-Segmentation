@@ -53,7 +53,7 @@ with torch.no_grad():
                 batch['y_orig']=batch['y_orig'].cuda()
                 batch['y']=batch['y'].cuda() # scene_label
             predictions=model(batch['x'])
-            pseudo_labels, num = stats.get_pseudo_labels(predictions, batch['y'], batch['x'].batch_offsets, threshold=thresh, show_stats=False)
+            pseudo_labels, num = stats.get_pseudo_labels(predictions, batch['y'], batch['x'].batch_offsets, threshold=thresh, show_stats=True)
             num_pseudo_labels += num
             total_label_num += pseudo_labels.size(0)
             correct, _ = stats.assess_label_quality(pseudo_labels, batch['y_orig'])

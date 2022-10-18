@@ -34,10 +34,15 @@ def filter_one_scene(f_agg):
         NumBoxPseudos.append(NumBoxPseudo)
         if NumBoxPseudo < PseudoThresh:
             continue
-        box_label = int(mode(cropped_pseudo[cropped_pseudo != -100], axis=None)[0])
-        real_label = int(mode(cropped_label[cropped_label != -100], axis=None)[0])
-        NumFilteredBoxes[real_label] += 1
-        if box_label == real_label: CorrectBoxes[real_label] += 1
+        if np.all(cropped_label == -100) or np.all(cropped_pseudo == -100):
+            continue
+        try:
+            box_label = int(mode(cropped_pseudo[cropped_pseudo != -100], axis=None)[0])
+            real_label = int(mode(cropped_label[cropped_label != -100], axis=None)[0])
+            NumFilteredBoxes[real_label] += 1
+            if box_label == real_label: CorrectBoxes[real_label] += 1
+        except:
+            print(mode(cropped_label[cropped_label != -100], axis=None))
     
     NumBoxPseudos = sum(NumBoxPseudos) / len(NumBoxPseudos)
     
@@ -47,7 +52,7 @@ def filter_one_scene(f_agg):
 from time import time
 start = time()
 p = mp.Pool(processes=mp.cpu_count() // 2)
-stats = p.map(filter_one_scene, agg_file[:50])
+stats = p.map(filter_one_scene, agg_file)
 p.close()
 p.join()
 print(f"Filter finished. Elapsed {time() - start} seconds.")
