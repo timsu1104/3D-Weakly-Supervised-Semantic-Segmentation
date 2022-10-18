@@ -175,3 +175,7 @@ cython_debug/
 output/
 visualization/
 **commands.txt
+**vis**
+**/aggregated_data
+**/computed_proposal_scannet
+**/scannet_all_points
