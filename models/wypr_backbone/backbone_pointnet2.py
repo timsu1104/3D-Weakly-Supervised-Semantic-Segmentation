@@ -90,7 +90,7 @@ class Pointnet2Backbone(nn.Module):
             end_points: {XXX_xyz, XXX_features, XXX_inds}
                 XXX_xyz: float32 Tensor of shape (B,K,3)
                 XXX_features: float32 Tensor of shape (B,K,D)
-                XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1](index in the original pc)
+                XXX-inds: int64 Tensor of shape (B,K) values in [0,N-1](index in the last level pc)
         """
         if not end_points: end_points = {}
         batch_size = pointcloud.shape[0]

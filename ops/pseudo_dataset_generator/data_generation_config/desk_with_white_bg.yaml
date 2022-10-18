@@ -1,0 +1,19 @@
+PATH:
+  folder: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset'
+  Output_path: '/data/zhuhe/3DUNetWithText/datasets/pseudo_dataset/desk_picture_with_white_bg'
+
+GENERATION:
+  cls: desk'_picture_with_white_bg'
+  text_format: "desk"
+  prefix: 'This is a ficture of a'
+  suffix: 'with white background'
+
+FILTERING:
+  bgcolor: 'white'
+  mean_thresh: 228
+  proportion_thresh: 0.55
+  color_thresh: 240
+
+BLUR:
+  blur_radius: 1
+  blur_samples: 20
