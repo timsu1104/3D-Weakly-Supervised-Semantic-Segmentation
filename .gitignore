@@ -179,3 +179,4 @@ visualization/
 **/aggregated_data
 **/computed_proposal_scannet
 **/scannet_all_points
+ops/GeometricSelectiveSearch/shape_det/cgal_output
