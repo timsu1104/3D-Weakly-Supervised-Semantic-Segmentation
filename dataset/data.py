@@ -231,7 +231,7 @@ def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
         if np.random.random() > 0.8:
             point_cloud[:,1] = -1 * point_cloud[:,1]
             target_props_aug[:,1] = -1 * target_props_aug[:,1]  
-        # roatation
+        # rotation
         rot_angle = (np.random.random()*np.pi/6)
         rot_mat = rotz(rot_angle)
         point_cloud_aug[:,0:3] = np.dot(point_cloud_aug[:,0:3], np.transpose(rot_mat))
@@ -248,14 +248,16 @@ def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
     jitter_min = 0.95; jitter_max = 2 - jitter_min
     jitter_scale = np.random.rand(point_cloud.shape[0]) * (jitter_max - jitter_min) + jitter_min
     point_cloud_aug[:, :3] *= jitter_scale.reshape(-1, 1)
-    # # dropout  
-    # num_aug_points_sampled = int(0.9 * point_cloud_aug.shape[0])
-    # point_cloud_aug, choices_aug = cfg.random_sampling(point_cloud, num_aug_points_sampled, return_choices=True)  
-    return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug
+    # dropout  
+    num_aug_points_sampled = int(0.9 * point_cloud_aug.shape[0])
+    point_cloud_aug, choices_aug = random_sampling(point_cloud_aug, num_aug_points_sampled, return_choices=True)  
+    
+    return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug
 
 def trainMerge(tbl):
     locs=[]
     locs_aug=[]
+    masks_aug = []
     boxes = []
     boxes_aug = []
     shp=[]
@@ -263,8 +265,6 @@ def trainMerge(tbl):
     labels=[]
     scene_labels = []
     scene_names = []
-    batch_offsets = [0]
-    batch_offsets_aug = [0]
     has_text = []
     texts = []
 
@@ -286,12 +286,7 @@ def trainMerge(tbl):
         assert ind == len(data) - 1, f"{ind} {len(data)}"
         a, (b, normal), c = pc # a - coords, b - colors, c - label
         
-        a, a_aug, b, c, shape_labels, prop, prop_aug = wypr_augmentation(a, b, c, normal, box, shapes, augment=True)
-        
-        a = torch.from_numpy(a)
-        a_aug = torch.from_numpy(a_aug)
-        prop = torch.from_numpy(prop)
-        prop_aug = torch.from_numpy(prop_aug)
+        a, a_aug, b, c, shape_labels, prop, prop_aug, choices, choices_aug = wypr_augmentation(a, b, c, normal, box, shapes, augment=True)
 
         scene_label_inds = np.unique(c).astype('int')
         scene_label_inds = scene_label_inds[scene_label_inds >= 0]
@@ -303,26 +298,29 @@ def trainMerge(tbl):
             text = tokenize(text)
             texts.append(text)
 
-        locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
-        locs_aug.append(torch.cat([a_aug,torch.LongTensor(a_aug.shape[0], 1).fill_(idx)],1))
-        boxes.append(torch.cat([prop[:, :6],torch.LongTensor(prop.shape[0], 1).fill_(idx)],1))
-        boxes_aug.append(torch.cat([prop_aug[:, :6],torch.LongTensor(prop_aug.shape[0], 1).fill_(idx)],1))
+        locs.append(torch.from_numpy(a))
+        locs_aug.append(torch.from_numpy(a_aug))
+        boxes.append(torch.from_numpy(prop))
+        boxes_aug.append(torch.from_numpy(prop_aug))
         shp.append(torch.from_numpy(shape_labels))
         feats.append(torch.from_numpy(b))
         labels.append(torch.from_numpy(c if not pseudo_label_flag else pseudo_label)) 
         scene_labels.append(torch.from_numpy(scene_label))
         if not pseudo_label_flag:
             scene_names.append(scene_name)
-        batch_offsets.append(batch_offsets[-1] + a.shape[0])
-        batch_offsets_aug.append(batch_offsets[-1] + a_aug.shape[0])
+        
+        mask = torch.empty((a.shape[0]), dtype=torch.bool).fill_(False)
+        mask[choices_aug] = True
+        masks_aug.append(mask)
 
-    locs = torch.cat(locs, 0)
-    locs_aug = torch.cat(locs_aug, 0)
-    boxes = torch.cat(boxes, 0)
-    boxes_aug = torch.cat(boxes_aug, 0)
-    shp = torch.cat(shp, 0)
-    feats = torch.cat(feats, 0)
-    labels = torch.cat(labels, 0) # B, N
+    locs = torch.stack(locs, 0)
+    locs_aug = torch.stack(locs_aug, 0)
+    boxes = torch.stack(boxes, 0)
+    boxes_aug = torch.stack(boxes_aug, 0)
+    masks_aug = torch.stack(masks_aug, 0)
+    shp = torch.stack(shp, 0)
+    feats = torch.stack(feats, 0)
+    labels = torch.stack(labels, 0) # B, N
     scene_labels = torch.stack(scene_labels) # B, NumClasses
     texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
     has_text = torch.tensor(has_text).long()
@@ -331,10 +329,9 @@ def trainMerge(tbl):
             'coords': locs,
             'coords_aug': locs_aug,
             'feature': feats,
-            'batch_offsets': batch_offsets,
-            'batch_offsets_aug': batch_offsets_aug,
             'boxes': boxes, # (NumBoxes, 6)
             'boxes_aug': boxes_aug, # (NumBoxes, 6)
+            'masks': masks_aug, # Smask (augSmask=None is okay)
             'shapes': shp
             }
 
@@ -353,7 +350,7 @@ train_data_loader = torch.utils.data.DataLoader(
     num_workers=4, 
     shuffle=True,
     drop_last=True,
-    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    worker_init_fn=lambda x: np.random.seed(x+int(time()))
 )
 
 valOffsets=[0]
@@ -380,32 +377,29 @@ def valMerge(tbl):
         pc, box, shape, scene_name = val[i]
         a, (b, normal), c = pc
 
-        a, a_aug, b, c, shape_labels, prop, prop_aug = wypr_augmentation(a, b, c, normal, box, shape, augment=True)
-        
-        a=torch.from_numpy(a).long()
-        prop = torch.from_numpy(prop)
+        a, a_aug, b, c, shape_labels, prop, prop_aug, choices, choices_aug = wypr_augmentation(a, b, c, normal, box, shape, augment=True)
 
         scene_label_inds = np.unique(c).astype('int')
         scene_label_inds = scene_label_inds[scene_label_inds >= 0]
         scene_label = np.zeros(NUM_CLASSES)
         scene_label[scene_label_inds] = 1
 
-        locs.append(torch.cat([a,torch.LongTensor(a.shape[0],1).fill_(idx)],1))
-        boxes.append(torch.cat([prop,torch.LongTensor(prop.shape[0],1).fill_(idx)],1))
+        locs.append(torch.from_numpy(a))
+        boxes.append(torch.from_numpy(prop))
         
         feats.append(torch.from_numpy(b))
         labels.append(torch.from_numpy(c))
         shapes.append(torch.from_numpy(shape_labels))
         scene_names.append(scene_name)
         scene_labels.append(torch.from_numpy(scene_label))
-        point_ids.append(torch.from_numpy(np.arange(a.shape[0])+valOffsets[i]))
-    locs=torch.cat(locs,0)
-    boxes=torch.cat(boxes,0)
-    feats=torch.cat(feats,0)
-    shapes=torch.cat(shapes,0)
-    labels=torch.cat(labels,0)
+        point_ids.append(torch.from_numpy(choices))
+    locs=torch.stack(locs,0)
+    boxes=torch.stack(boxes,0)
+    feats=torch.stack(feats,0)
+    shapes=torch.stack(shapes,0)
+    labels=torch.stack(labels,0)
     scene_labels = torch.stack(scene_labels) # B, NumClasses
-    point_ids=torch.cat(point_ids,0)
+    point_ids=torch.stack(point_ids,0)
 
     input_batch = {
         'coords': locs,
@@ -428,23 +422,28 @@ val_data_loader = torch.utils.data.DataLoader(
     collate_fn=valMerge,
     num_workers=4,
     shuffle=False,
-    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    worker_init_fn=lambda x: np.random.seed(x+int(time()))
 )
 
 if __name__ == '__main__':
-    for batch in train_data_loader:
+    def show_batch(batch):
         print(batch.keys())
-        for k, v in batch['x'].items():
-            if isinstance(v, torch.Tensor):
-                print(k, v.size())
+        for k, v in batch.items():
+            print(k, end=" ")
+            if isinstance(v, dict):
+                show_batch(v)
+            elif isinstance(v, torch.Tensor):
+                print("tensor", end=" ")
+                print(v.size())
             else:
-                print(k, v)
-        break
-    for batch in val_data_loader:
-        print(batch.keys())
-        for k, v in batch['x'].items():
-            if isinstance(v, torch.Tensor):
-                print(k, v.size())
-            else:
-                print(k, v)
-        break
+                print(v)
+    
+    from time import time
+    start = time()
+    print("train data loader")
+    for i, batch in enumerate(train_data_loader):
+        if i == 0: show_batch(batch)
+    print("\nval data loader")
+    for i, batch in enumerate(val_data_loader):
+        if i == 0: show_batch(batch)
+    print("Total elapsed {}sec.".format(time() - start))

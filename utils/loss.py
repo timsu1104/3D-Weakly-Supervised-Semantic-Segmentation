@@ -52,17 +52,23 @@ def WyPR_SegLoss(
     augSlogits: torch.Tensor, 
     Sdetlogits: torch.Tensor, 
     boxes: torch.Tensor,
-    Planes: torch.Tensor,
+    shapeLabels: torch.Tensor,
     coords: torch.Tensor,
     labels: torch.Tensor,
     Ylabels: torch.Tensor,
     Smask: torch.Tensor=None,
     augSmask: torch.Tensor=None):
     """
-    Ulogits (N, C+1): U_seg
-    Slogits (N, C+1): S_seg
+    Ulogits (B, N, C): U_seg
+    Slogits (B, N, C): S_seg
+    augSlogits (B, N, C): S_seg_aug
+    Sdetlogits (B, N, C): S_det
+    coords (B, N, 3): coords 
+    boxes (B, R, 6): boxes 
+    shapeLabels (B, N,): shapeLabels 
     labels (B, C): scene-level labels
-    Ylabels (N, C): Y_seg (one_hot or all zero)
+    Ylabels (B, N, C): Y_seg (one_hot or all zero)
+    Smask, augSmask: overlapping meta
     """
     Slogits = Slogits[:, :-1]
     return \
@@ -70,7 +76,7 @@ def WyPR_SegLoss(
         WyPR_Seg_SelfTrainingLoss(Slogits, Ylabels) + \
         WyPR_Seg_CrossTransformConsistencyLoss(Slogits, augSlogits, Smask=Smask, augSmask=augSmask) + \
         WyPR_Seg_CrossTaskConsistencyLoss(coords, Slogits, Sdetlogits, boxes) + \
-        WyPR_Seg_SmoothLoss(Slogits, Planes)
+        WyPR_Seg_SmoothLoss(Slogits, shapeLabels)
         
 @LOSS_REGISTRY.register()
 def WyPR_DetLoss(
@@ -81,6 +87,14 @@ def WyPR_DetLoss(
     Ylabels: torch.Tensor,
     Smask: torch.Tensor=None,
     augSmask: torch.Tensor=None):
+    """
+    Ulogits (B, R, C): U_det
+    Slogits (B, R, C): S_det
+    augSlogits (B, R, C): S_det_aug
+    labels (B, C): scene-level labels
+    Ylabels (B, R, C): Y_det (one_hot or all zero)
+    Smask, augSmask: overlapping meta
+    """
     return \
         WyPR_Det_MILLoss(Ulogits, labels) + \
         WyPR_Det_SelfTrainingLoss(Slogits, Ylabels) + \
@@ -91,19 +105,12 @@ def WyPR_Seg_MILLoss(Ulogits: torch.Tensor, labels: torch.Tensor):
     """
     Multi-instance label loss for segmentation module of WyPR.
     
-    Ulogits (N, C+1): U_seg
+    Ulogits (B, N, C): U_seg
     labels (B, C): scene-level labels
     
     both in float
     """
-    scene_level_logits = []
-    batch_ids = torch.unique(Ulogits[:, -1])
-    for batch_id in batch_ids:
-        batch_mask = Ulogits[:, -1] == batch_id
-        scene_level_logit = torch.mean(Ulogits[batch_mask, :-1], dim=0)
-        scene_level_logits.append(scene_level_logit)
-    scene_level_logits = torch.stack(scene_level_logits)
-    
+    scene_level_logits = Ulogits.mean(dim=-2) # B, C
     criterion = nn.BCEWithLogitsLoss()
     return criterion(scene_level_logits, labels)
 
@@ -112,8 +119,8 @@ def WyPR_Seg_SelfTrainingLoss(Slogits: torch.Tensor, Ylabels: torch.Tensor):
     """
     Self-training loss for segmentation module of WyPR.
     
-    Slogits (N, C): S_seg
-    Ylabels (N, C): Y_seg (one_hot or all zero)
+    Slogits (B, N, C): S_seg
+    Ylabels (B, N, C): Y_seg (one_hot or all zero)
     """
     mask = Ylabels.sum(dim=-1) == 1 # (N, )
     pseudoLabels = Ylabels[mask]
@@ -131,9 +138,9 @@ def WyPR_Seg_CrossTransformConsistencyLoss(
     """
     Cross-transformation Consistency loss for segmentation module of WyPR.
     
-    Slogits (N, C): S_seg
-    augSlogits (N, C): augmented S_seg
-    Smask and augSmask (N, ): need for transformation like crop and pad, mask out the overlapping part
+    Slogits (B, N, C): S_seg
+    augSlogits (B, N, C): augmented S_seg
+    Smask and augSmask (B, N): need for transformation like crop and pad, mask out the overlapping part
     """
     if Smask is not None:
         Slogits = Slogits[Smask]
@@ -163,34 +170,38 @@ def WyPR_Seg_CrossTaskConsistencyLoss(
     """
     Cross-task Consistency loss for segmentation module of WyPR.
     
-    coords (N, 3): coordinates
-    Sseglogits (N, C): S_seg
-    Sdetlogits (N, C): S_det
-    boxes (R, 6): need for transformation like crop and pad, mask out the overlapping part
+    coords (B, N, 3): coordinates
+    Sseglogits (B, N, C): S_seg
+    Sdetlogits (B, R, C): S_det
+    boxes (B, R, 6): gss's box
     """
-    boxProb = torch.softmax(Sdetlogits, -1) # N, C
+    boxProb = torch.softmax(Sdetlogits, -1) # R, C
     SsegProb = torch.softmax(Sseglogits, -1)
     Losses = []
-    for box, Blogits in zip(boxes, boxProb):
-        mask = (torch.prod(coords >= box[0:3], -1) * torch.prod(coords >= box[3:6], -1)).bool()
-        Losses.append(alignLogitsLoss(Blogits, SsegProb[mask]))
+    for batch_boxes, batch_det_logits, batch_seg_logits, batch_coords in zip(boxes, boxProb, SsegProb, coords):
+        for box, Blogits in zip(batch_boxes, batch_det_logits):
+            mask = (torch.prod(batch_coords >= box[0:3], -1) * torch.prod(batch_coords >= box[3:6], -1)).bool()
+            Losses.append(alignLogitsLoss(Blogits, batch_seg_logits.masked_select(mask)))
     loss = torch.stack(Losses).mean()
     return loss
     
 @LOSS_REGISTRY.register()
 def WyPR_Seg_SmoothLoss(
     Slogits: torch.Tensor, 
-    Planes: torch.Tensor):
+    shapeLabels: torch.Tensor):
     """
     Smoothness Regularization loss for segmentation module of WyPR.
     
-    Slogits (N, C): S_seg
-    Planes (G, NPts): need for transformation like crop and pad, mask out the overlapping part
+    Slogits (B, N, C): S_seg
+    shapeLabels (B, N): G
     """
     Losses = []
-    for plane in Planes:
-        selectLogits = torch.softmax(Slogits[plane], -1)
-        Losses.append(alignLogitsLoss(selectLogits, selectLogits.mean(dim=0)))
+    for batch_logits, batch_shape in zip(Slogits, shapeLabels):
+        shapeId = torch.unique(batch_shape)
+        for id in shapeId:
+            mask = batch_shape == id
+            selectLogits = torch.softmax(batch_logits.masked_select(mask), -1)
+            Losses.append(alignLogitsLoss(selectLogits, selectLogits.mean(dim=0)))
     loss = torch.stack(Losses).mean()
     return loss
 
@@ -201,19 +212,12 @@ def WyPR_Det_MILLoss(Ulogits: torch.Tensor, labels: torch.Tensor):
     """
     Multi-instance label loss for detection module of WyPR.
     
-    Ulogits (R, C+1): U_det
+    Ulogits (B, R, C): U_det
     labels (B, C): scene-level labels
     
     both in float
     """
-    scene_level_logits = []
-    batch_ids = torch.unique(Ulogits[:, -1])
-    for batch_id in batch_ids:
-        batch_mask = Ulogits[:, -1] == batch_id
-        scene_level_logit = torch.mean(Ulogits[batch_mask, :-1], dim=0)
-        scene_level_logits.append(scene_level_logit)
-    scene_level_logits = torch.stack(scene_level_logits)
-    
+    scene_level_logits = torch.mean(Ulogits, -2)
     criterion = nn.BCEWithLogitsLoss()
     return criterion(scene_level_logits, labels)
 
@@ -222,8 +226,8 @@ def WyPR_Det_SelfTrainingLoss(Slogits: torch.Tensor, Ylabels: torch.Tensor):
     """
     Self-training loss for detection module of WyPR.
     
-    Slogits (N, C): S_det
-    Ylabels (N, C): Y_det (one_hot or all zero)
+    Slogits (B, N, C): S_det
+    Ylabels (B, N, C): Y_det (one_hot or all zero)
     """
     mask = Ylabels.sum(dim=-1) == 1 # (N, )
     pseudoLabels = Ylabels[mask]
@@ -241,9 +245,9 @@ def WyPR_Det_CrossTransformConsistencyLoss(
     """
     Cross-transformation Consistency loss for detection module of WyPR.
     
-    Slogits (R, C): S_det
-    augSlogits (R, C): augmented S_det
-    Smask and augSmask (N, ): need for transformation like crop and pad, mask out the overlapping part
+    Slogits (B, R, C): S_det
+    augSlogits (B, R, C): augmented S_det
+    Smask and augSmask (B, N, ): need for transformation like crop and pad, mask out the overlapping part
     """
     if Smask is not None:
         Slogits = Slogits[Smask]
