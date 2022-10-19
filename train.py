@@ -15,6 +15,7 @@ from torchvision import transforms, utils
 from utils import iou, loss
 from utils.config import *
 import torchvision.utils as vutils
+import matplotlib.pyplot as plt
 from dataset.pseudo_loader import Pseudo_Images
 from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 
@@ -25,6 +26,8 @@ from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
 from itertools import cycle
 from models.GanDiscriminator import NaiiveCNN
 # Setups
+import numpy as np
+import open3d as o3d
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 TRAIN_NAME = cfg.training_name
@@ -59,6 +62,8 @@ if cfg.loss.Gan:
     
     embed_width = MODEL_REGISTRY.get(cfg.pointcloud_model.name)[1].get('embed_length', lambda m : m)(cfg.pointcloud_model.m)
     projector_, proj_meta=MODEL_REGISTRY.get('Projector')
+    cropBox, crop_meta=MODEL_REGISTRY.get('cropBox')
+    
     projector = projector_(embed_width, out_channels=cfg.projector.mask_channels, resolution=cfg.projector.mask_res)
     discriminator=NaiiveCNN()
     if use_cuda:
@@ -99,6 +104,7 @@ for epoch in range(training_epoch, training_epochs+1):
     
     e_iter = 0
     first=0
+    epoch_first=0
     for i, batch in enumerate(train_data_loader):
         iteration_cnt+=1
         s_iter = time.time()
@@ -138,7 +144,28 @@ for epoch in range(training_epoch, training_epochs+1):
                 batch['x'].coords = batch['x'].coords.cuda()
             start = time.time()
             cls_mask=torch.Tensor(valid_cls).cuda()
+            ori_coords,original_else,cropped_coords, cropped_feats,batch_lens,dominate_class,box_class =cropBox(batch['x'].coords, point_logits, pseudo_class, batch['x'].boxes, batch['x'].transform,debug=True)
+            if epoch_first==0:
+                epoch_first=1
+                pcd1 = o3d.geometry.PointCloud()
+                result=batch['x'].coords[ori_coords,:]
+                box_id=result[0][3]
+                result=result[:,:3]
+                result2=batch['x'].coords[~ori_coords,:]
+                result2=result2[result2[:,3]==box_id,:3]
+                print(result,result2)
+                red=torch.tensor([1,0,0]).float()
+                blue=torch.tensor([0,0,1]).float()
+                color=torch.cat([red.repeat((result.shape[0],1)),blue.repeat((result2.shape[0],1))])
+                result=torch.cat([result,result2])
+                pcd1.points = o3d.utility.Vector3dVector(result.cpu().numpy())
+                pcd1.colors = o3d.utility.Vector3dVector(color.numpy())
+                o3d.visualization.draw_geometries([pcd1])
+                #plt.plot([0,1,2,3,4,5])
+                #plt.show()
+                #v = pptk.viewer()
             gen_mask,gen_label = projector(batch['x'].coords, point_logits,pseudo_class, batch['x'].boxes, batch['x'].transform, cfg.projector.render_view) # (B, C, res, res)
+            
             #print(gen_mask)
             print('projection', time.time()-start)
             gen_mask=gen_mask[torch.gather(cls_mask,0,gen_label).bool()]

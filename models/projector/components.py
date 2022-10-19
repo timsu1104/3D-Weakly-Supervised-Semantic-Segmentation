@@ -2,8 +2,11 @@ import torch
 from torch import nn
 import sparseconvnet as scn
 from dataset.data import NUM_CLASSES
+from utils.registry import MODEL_REGISTRY
 
-def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor, boxes: torch.Tensor, transform: tuple):
+
+@MODEL_REGISTRY.register()
+def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor, boxes: torch.Tensor, transform: tuple, debug=False):
     """
     coords: (N, 3+1), 1 for batch
     feats: (N, C)
@@ -21,6 +24,7 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
     feats_pool = []
     dominate_class=[]
     box_dominate_class=[]
+    original_pool=[]
     axis_align_matrix, centers, rots, offsets = transform
     for id, box in enumerate(boxes):
         center = box[:3]
@@ -48,6 +52,9 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         cropped_feats = feats[feats_sel_mask]
         cropped_coords = batch_pc[selected_mask]
         cropped_class = batch_class[selected_mask]
+        original_pc=feats_sel_mask
+        #original_else=coords[(1-feats_sel_mask).bool()]
+        original_else=None
         # centering
         cropped_coords[:, :3] -= cropped_coords[:, :3].min(0)[0]
         cropped_coords[:, :3] /= (cropped_coords[:, :3].max(0)[0] - cropped_coords[:, :3].min(0)[0])
@@ -62,6 +69,7 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         dominate_class.append(torch.full((cropped_class.size(0),1),max_cls, device=device))
         box_dominate_class.append(max_cls)
         coords_pool.append(cropped_coords)
+        original_pool.append(original_pc)
         #TODO：change back to feats
         feats_pool.append(cropped_class)
     batch_lens=[]
@@ -71,8 +79,12 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
     new_feats = torch.cat(feats_pool)
     dominate_class=torch.cat(dominate_class)
     box_dominate_class=torch.LongTensor(box_dominate_class).to(device)
-    return new_coords, new_feats,batch_lens,dominate_class,box_dominate_class
-
+    original_pc=original_pool[0]
+    if not debug:
+        return new_coords, new_feats,batch_lens,dominate_class,box_dominate_class
+    else:
+        return original_pc,original_else, new_coords,new_feats,batch_lens,dominate_class,box_dominate_class
+@MODEL_REGISTRY.register()
 class MattingModule(nn.Module):
     """
     Matting the pointcloud
@@ -99,6 +111,7 @@ class MattingModule(nn.Module):
         appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
         appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
         return new_coords, out_feat,box_dominate_class[appear_mask]
+@MODEL_REGISTRY.register()
 class DirectMattingModule(nn.Module):
     """
     Matting the pointcloud
@@ -125,6 +138,7 @@ class DirectMattingModule(nn.Module):
         appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
         appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
         return new_coords, out_feat,box_dominate_class[appear_mask]
+@MODEL_REGISTRY.register()
 class Voxelizer(nn.Module):
     """
     Parameters
@@ -146,6 +160,7 @@ class Voxelizer(nn.Module):
     def forward(self, coords: torch.Tensor, feats: torch.Tensor,box_class, view='HWZ'):
         coords[:, :-1] = coords[:, :-1] * self.res
         #print("Start voxelize")
+        
         voxel = self.voxelizer([coords, feats]) # [B, C, H, W, Z]
         
         _, _, H, W, Z = voxel.size()
