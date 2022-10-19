@@ -56,3 +56,8 @@ dimension = cfg.pointcloud_model.dimension
 full_scale = cfg.pointcloud_model.full_scale #Input field size
 if subcloud_flag:
     in_radius = cfg.in_radius
+
+try:
+    use_gt = cfg.use_gt
+except:
+    use_gt = False
