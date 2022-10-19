@@ -16,7 +16,6 @@ import pickle
 
 sys.path.append(os.getcwd()) # HACK: add working directory
 from utils.config import cfg
-from .dataset_utils import elastic
 
 scale=cfg.pointcloud_data.scale  #Voxel size = 1/scale - 5cm
 val_reps=cfg.pointcloud_data.val_reps # Number of test views, 1 or more
@@ -152,7 +151,7 @@ def trainMerge(tbl):
         data = train[i]
         pc = data[0]
         box = torch.from_numpy(data[1])
-        print("Read", box.shape[0], "boxes.")
+        # print("Read", box.shape[0], "boxes.")
         # if box.shape[0] > 64: box = box[:64]
         # print("Keep", box.shape[0], "boxes.")
         scene_name = data[-1]
@@ -162,7 +161,7 @@ def trainMerge(tbl):
             ind += 1
         if text_flag:
             text = data[ind]
-        assert ind == len(data) - 1
+        assert ind == len(data) - 1, f"{ind} {len(data)}"
         #TODO: debug here
         (a, center), b, c, align_mat = pc # a - coords, b - colors, c - label
         
@@ -328,3 +327,11 @@ val_data_loader = torch.utils.data.DataLoader(
     shuffle=False,
     worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
 )
+
+if __name__ == '__main__':
+    for batch in train_data_loader:
+        print(batch.keys())
+        break
+    for batch in val_data_loader:
+        print(batch.keys())
+        break

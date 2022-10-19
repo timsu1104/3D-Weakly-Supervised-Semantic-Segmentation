@@ -48,6 +48,8 @@ if use_cuda:
 
 training_epochs=cfg.epochs
 training_epoch=scn.checkpoint_restore(model,exp_name,'model',use_cuda)
+model.load_state_dict(torch.load('/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/exp/scene_level_with_fcnet_uppool/scene_level_with_fcnet_uppool-000000256-model.pth'), strict=False)
+model.cuda()
 
 # optimizer = optim.Adam(model.parameters())
 print(cfg)

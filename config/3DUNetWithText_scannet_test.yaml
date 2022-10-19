@@ -9,10 +9,7 @@ DATA:
     batch_size: 8
     elastic_deformation: False
   label: scene_level
-  has_text: True
-  text_data:
-    max_seq_len: 120
-    cropped_texts: 10
+  has_text: False
 
 STRUCTURE:
   pointcloud_model:
