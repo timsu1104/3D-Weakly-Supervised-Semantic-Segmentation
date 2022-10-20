@@ -7,7 +7,7 @@
 '''Code adapted from https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix'''
 import os
 import time
-from wypr.utils.tf_logger import Logger
+from .tf_logger import Logger
 
 class Visualizer():
     def __init__(self, log_dir, name='train'):

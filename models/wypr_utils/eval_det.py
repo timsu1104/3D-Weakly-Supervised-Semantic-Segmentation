@@ -25,8 +25,8 @@ import sys
 import numpy as np
 from multiprocessing import Pool
 
-from wypr.utils.metric_util import calc_iou # axis-aligned 3D box IoU
-from wypr.utils.box_util import box3d_iou
+from .metric_util import calc_iou # axis-aligned 3D box IoU
+from .box_util import box3d_iou
 
 def voc_ap(rec, prec, use_07_metric=False):
     """ ap = voc_ap(rec, prec, [use_07_metric])

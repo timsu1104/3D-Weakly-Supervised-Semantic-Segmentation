@@ -6,13 +6,14 @@
 
 import os
 import torch
+import numpy as np
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import sparseconvnet as scn
 import time
 import warnings
 
-from utils import iou, loss
+from utils import iou, loss, stats
 from utils.config import *
 
 if dist_flag:
@@ -23,6 +24,8 @@ if dist_flag:
     
 import models # register the classes
 from utils.registry import MODEL_REGISTRY, LOSS_REGISTRY
+from utils.ap_helper import APCalculator
+from dataset.data import class2type
 
 # Setups
 warnings.filterwarnings("ignore")
@@ -47,7 +50,7 @@ else:
     if use_cuda:
         model=model.cuda()
 
-from dataset.data import train_data_loader, val_data_loader, train, val, valOffsets, valLabels
+from dataset.data import NUM_CLASSES, train_data_loader, val_data_loader, train, val, valOffsets, valLabels
 
 # optimizer = optim.Adam(model.parameters())
 optimizer = optim.Adam([{'params': model.parameters(), 'initial_lr': cfg.lr}], lr=cfg.lr)
@@ -105,6 +108,8 @@ for epoch in range(training_epoch, training_epochs+1):
     if local_rank == 0:
         if dist_flag:
             save_model = model.module
+        else:
+            save_model = model
         print(
             epoch,
             'Train loss', train_loss/(i+1), 
@@ -116,30 +121,51 @@ for epoch in range(training_epoch, training_epochs+1):
         scn.checkpoint_save(save_model,exp_name,'model',epoch, use_cuda)
         if verbose: print("Checkpoint saved.")
 
-    if local_rank == 0 and (scn.is_power2(epoch) or epoch % 32 == 0):
+    if local_rank == 0 and (stats.is_power2(epoch) or epoch % 32 == 0):
         with torch.no_grad():
             if dist_flag:
                 val_model = model.module
+            else:
+                val_model = model
             val_model.eval()
-            store=torch.zeros(valOffsets[-1],20)
-            scn.forward_pass_multiplyAdd_count=0
-            scn.forward_pass_hidden_states=0
+            store = torch.zeros(valOffsets[-1])
+            ap_calculator = APCalculator(class2type_map=class2type)
             start = time.time()
             for rep in range(1,1+cfg.pointcloud_data.val_reps):
                 for i,batch in enumerate(val_data_loader):
                     if use_cuda:
+                        batch['x'].coords=batch['x'].coords.cuda()
                         batch['x'].feature=batch['x'].feature.cuda()
+                        batch['x'].boxes=batch['x'].boxes.cuda() # B, R, 6
+                        batch['x'].shapes=batch['x'].shapes.cuda()
                         batch['y_orig']=batch['y_orig'].cuda()
-                    predictions=val_model(batch['x'])
-                    store.index_add_(0,batch['point_ids'],predictions.cpu())
+                    pred_seg, pred_det = val_model(batch['x'])
+                        
+                    # segmentation
+                    store.index_add_(0, batch['point_ids'], pred_seg.view(-1).cpu())
+                    
+                    # detection
+                    gt_boxes = batch['gt_box']
+                    batch_gt_map_cls = [
+                        list(zip(target_bbox_semcls, target_bbox))
+                        for target_bbox, target_bbox_mask, target_bbox_semcls in gt_boxes]
+                    batch_pred_map_cls = [
+                        list(zip(batch_pred_cls, batch_boxes, batch_pred_score)) 
+                        for batch_pred_cls, batch_boxes, batch_pred_score in zip(pred_det[1], batch['x'].boxes.cpu(), pred_det[0])]
+                    ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)
+                    
                 print(
                     epoch,
                     rep,
-                    'Val MegaMulAdd', scn.forward_pass_multiplyAdd_count/len(val)/1e6, 
-                    'MegaHidden', scn.forward_pass_hidden_states/len(val)/1e6,
                     'time', time.time() - start, 's'
                     )
-                mean_iou = iou.evaluate(store.max(1)[1].numpy(),valLabels)
+                mean_iou = iou.evaluate(store.numpy(),valLabels)
+                
+                print('-'*10, 'prop: iou_thresh: 0.25', '-'*10)
+                metrics_dict = ap_calculator.compute_metrics()
+                for key in metrics_dict:
+                    print('eval %s: %f'%(key, metrics_dict[key]))
+                    
                 writer.add_scalar("Validation accuracy", mean_iou, epoch)
 
 writer.close()

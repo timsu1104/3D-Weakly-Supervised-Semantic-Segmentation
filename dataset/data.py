@@ -60,12 +60,14 @@ def collect_val_files(x:str):
     data = torch.load(x)
     prefix = x[:-15]
     scene_name = prefix.split('/')[-1]
-    box_file = os.path.join(box_path, scene_name + '_prop.npy') if not use_gt else os.path.join(wypr_path, scene_name + '_bbox.npy')
+    box_file = os.path.join(box_path, scene_name + '_prop.npy')
+    gt_box_file = os.path.join(wypr_path, scene_name + '_bbox.npy')
     box = np.load(box_file)
+    gt_box = np.load(gt_box_file)
     shape_file = os.path.join(wypr_path, scene_name + '_shape.npy')
     shapes = np.load(shape_file)
 
-    result = [data, box, shapes]
+    result = [data, (box, gt_box), shapes]
     result.append(scene_name) # scene name
     return result
 
@@ -140,6 +142,14 @@ print('Validation examples:', len(val))
 
 MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
 MAX_NUM_PROP = 1000
+MAX_NUM_OBJ = 64
+
+type2class = {'cabinet':0, 'bed':1, 'chair':2, 'sofa':3, 'table':4, 'door':5,
+    'window':6,'bookshelf':7,'picture':8, 'counter':9, 'desk':10, 'curtain':11,
+    'refrigerator':12, 'showercurtrain':13, 'toilet':14, 'sink':15, 'bathtub':16, 'garbagebin':17}  
+class2type = {type2class[t]:t for t in type2class}
+nyu40ids = np.array([3,4,5,6,7,8,9,10,11,12,14,16,24,28,33,34,36,39])
+nyu40id2class = {nyu40id: i for i,nyu40id in enumerate(list(nyu40ids))}
 
 def augment_input_wypr(coords, color, normals):
     point_cloud = coords
@@ -179,6 +189,8 @@ def sparseconvnet_augmentation_train(a, b, c, pseudo_label):
     return a, b, c, pseudo_label
 
 def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
+    if not augment:
+        props, gt_props = props
     point_cloud, pcl_color = augment_input_wypr(a, b, normals)
     semantic_labels = c
     
@@ -186,6 +198,18 @@ def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
         choices = np.random.choice(props.shape[0], MAX_NUM_PROP, replace=False)
         props = props[choices]
     
+    if not augment:
+        # boxes
+        target_bboxes = np.zeros((MAX_NUM_OBJ, 6))
+        target_bboxes_mask = np.zeros((MAX_NUM_OBJ))    
+        target_bboxes_mask[0:gt_props.shape[0]] = 1
+        target_bboxes[0:gt_props.shape[0],:] = copy.deepcopy(gt_props[:,0:6])
+        
+        # classes
+        target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))                                
+        target_bboxes_semcls[0:gt_props.shape[0]] = \
+            [nyu40id2class[x] for x in gt_props[:,-1][0:gt_props.shape[0]]]
+        
     # proposals
     target_props = np.zeros((MAX_NUM_PROP, 6))
     target_props_mask = np.zeros((MAX_NUM_PROP))    
@@ -252,7 +276,10 @@ def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
     num_aug_points_sampled = int(0.9 * point_cloud_aug.shape[0])
     point_cloud_aug, choices_aug = random_sampling(point_cloud_aug, num_aug_points_sampled, return_choices=True)  
     
-    return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug
+    if augment:
+        return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug
+    else:
+        return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug, target_bboxes, target_bboxes_mask, target_bboxes_semcls
 
 def trainMerge(tbl):
     locs=[]
@@ -372,12 +399,13 @@ def valMerge(tbl):
     scene_names = []
     scene_labels = []
     point_ids=[]
+    target_bboxes = []
 
-    for idx,i in enumerate(tbl):
+    for idx, i in enumerate(tbl):
         pc, box, shape, scene_name = val[i]
         a, (b, normal), c = pc
 
-        a, a_aug, b, c, shape_labels, prop, prop_aug, choices, choices_aug = wypr_augmentation(a, b, c, normal, box, shape, augment=True)
+        a, a_aug, b, c, shape_labels, prop, prop_aug, choices, choices_aug, target_bbox, target_bbox_mask, target_bbox_semcls = wypr_augmentation(a, b, c, normal, box, shape, augment=False)
 
         scene_label_inds = np.unique(c).astype('int')
         scene_label_inds = scene_label_inds[scene_label_inds >= 0]
@@ -392,14 +420,15 @@ def valMerge(tbl):
         shapes.append(torch.from_numpy(shape_labels))
         scene_names.append(scene_name)
         scene_labels.append(torch.from_numpy(scene_label))
-        point_ids.append(torch.from_numpy(choices))
+        point_ids.append(torch.from_numpy(choices) + valOffsets[i])
+        target_bboxes.append((target_bbox, target_bbox_mask, target_bbox_semcls))
     locs=torch.stack(locs,0)
     boxes=torch.stack(boxes,0)
     feats=torch.stack(feats,0)
     shapes=torch.stack(shapes,0)
     labels=torch.stack(labels,0)
     scene_labels = torch.stack(scene_labels) # B, NumClasses
-    point_ids=torch.stack(point_ids,0)
+    point_ids=torch.cat(point_ids,0)
 
     input_batch = {
         'coords': locs,
@@ -412,6 +441,7 @@ def valMerge(tbl):
         'x': edict(input_batch), 
         'y_orig': labels.long(), 
         'y': scene_labels.long(), 
+        'gt_box': target_bboxes,
         'id': tbl,
         'scene_name': scene_names, 
         'point_ids': point_ids}
@@ -424,6 +454,8 @@ val_data_loader = torch.utils.data.DataLoader(
     shuffle=False,
     worker_init_fn=lambda x: np.random.seed(x+int(time()))
 )
+
+
 
 if __name__ == '__main__':
     def show_batch(batch):

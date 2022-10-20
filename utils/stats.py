@@ -69,3 +69,6 @@ def store_pseudo_label(pseudo_labels, scene_names, batch_offset, path, suffix='_
         print(scene_name)
         pseudo_label = pseudo_labels[batch_offset[b] : batch_offset[b+1]]
         torch.save(pseudo_label, os.path.join(path, scene_name + suffix))
+
+def is_power2(num):
+    return num != 0 and ((num & (num - 1)) == 0)

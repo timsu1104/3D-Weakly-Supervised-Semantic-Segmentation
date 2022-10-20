@@ -22,9 +22,9 @@ import sys
 import numpy as np
 from multiprocessing import Pool
 
-from wypr.utils.metric_util import calc_iou # axis-aligned 3D box IoU
-from wypr.utils.eval_det import get_iou, get_iou_obb, get_iou_main
-from wypr.utils.box_util import box3d_iou
+from .metric_util import calc_iou # axis-aligned 3D box IoU
+from .eval_det import get_iou, get_iou_obb, get_iou_main
+from .box_util import box3d_iou
 
 def eval_prop_cls(pred, gt, ovthresh=0.25, get_iou_func=get_iou):
     """ Generic functions to compute precision/recall for object detection
