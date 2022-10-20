@@ -103,6 +103,8 @@ for epoch in range(training_epoch, training_epochs+1):
         
     lr_scheduler.step()
     if local_rank == 0:
+        if dist_flag:
+            save_model = model.module
         print(
             epoch,
             'Train loss', train_loss/(i+1), 
@@ -111,12 +113,13 @@ for epoch in range(training_epoch, training_epochs+1):
             'time', time.time() - start, 's'
             )
         writer.add_scalar("Train Loss", train_loss/(i+1), epoch)
-        scn.checkpoint_save(model.module,exp_name,'model',epoch, use_cuda)
+        scn.checkpoint_save(save_model,exp_name,'model',epoch, use_cuda)
         if verbose: print("Checkpoint saved.")
 
     if local_rank == 0 and (scn.is_power2(epoch) or epoch % 32 == 0):
         with torch.no_grad():
-            val_model = model.module()
+            if dist_flag:
+                val_model = model.module
             val_model.eval()
             store=torch.zeros(valOffsets[-1],20)
             scn.forward_pass_multiplyAdd_count=0

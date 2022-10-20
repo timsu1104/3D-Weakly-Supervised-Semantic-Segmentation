@@ -39,6 +39,7 @@ except Exception as e:
     print("Fallback due to", e)
     verbose = False
     dist_flag = False
+    local_rank = 0
     
 text_flag = cfg.has_text
 pseudo_label_flag = cfg.label == 'pseudo'
