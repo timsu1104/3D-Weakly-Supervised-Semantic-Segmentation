@@ -261,25 +261,25 @@ def wypr_augmentation(a, b, c, normals, props, shape_labels, augment=False):
         point_cloud_aug[:,0:3] = np.dot(point_cloud_aug[:,0:3], np.transpose(rot_mat))
         target_props_aug = rotate_aligned_boxes(target_props_aug, rot_mat)
         
-    # scale
-    min_s = 0.8;  max_s = 2 - min_s
-    # scale = np.random.rand(point_cloud.shape[0]) * (max_s - min_s) + min_s
-    # point_cloud_aug[:, :3] *= scale.reshape(-1, 1)
-    scale = np.random.rand() * (max_s - min_s) + min_s
-    point_cloud_aug[:, :3] *= scale
-    target_props_aug *= scale
-    # jittering
-    jitter_min = 0.95; jitter_max = 2 - jitter_min
-    jitter_scale = np.random.rand(point_cloud.shape[0]) * (jitter_max - jitter_min) + jitter_min
-    point_cloud_aug[:, :3] *= jitter_scale.reshape(-1, 1)
-    # dropout  
-    num_aug_points_sampled = int(0.9 * point_cloud_aug.shape[0])
-    point_cloud_aug, choices_aug = random_sampling(point_cloud_aug, num_aug_points_sampled, return_choices=True)  
+        # scale
+        min_s = 0.8;  max_s = 2 - min_s
+        # scale = np.random.rand(point_cloud.shape[0]) * (max_s - min_s) + min_s
+        # point_cloud_aug[:, :3] *= scale.reshape(-1, 1)
+        scale = np.random.rand() * (max_s - min_s) + min_s
+        point_cloud_aug[:, :3] *= scale
+        target_props_aug *= scale
+        # jittering
+        jitter_min = 0.95; jitter_max = 2 - jitter_min
+        jitter_scale = np.random.rand(point_cloud.shape[0]) * (jitter_max - jitter_min) + jitter_min
+        point_cloud_aug[:, :3] *= jitter_scale.reshape(-1, 1)
+        # dropout  
+        num_aug_points_sampled = int(0.9 * point_cloud_aug.shape[0])
+        point_cloud_aug, choices_aug = random_sampling(point_cloud_aug, num_aug_points_sampled, return_choices=True)  
     
     if augment:
         return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug
     else:
-        return point_cloud, point_cloud_aug, pcl_color, semantic_labels, shape_labels, target_props, target_props_aug, choices, choices_aug, target_bboxes, target_bboxes_mask, target_bboxes_semcls
+        return point_cloud, pcl_color, semantic_labels, shape_labels, target_props, choices, target_bboxes, target_bboxes_mask, target_bboxes_semcls
 
 def trainMerge(tbl):
     locs=[]
@@ -289,6 +289,7 @@ def trainMerge(tbl):
     boxes_aug = []
     shp=[]
     feats=[]
+    feats_aug=[]
     labels=[]
     scene_labels = []
     scene_names = []
@@ -331,6 +332,7 @@ def trainMerge(tbl):
         boxes_aug.append(torch.from_numpy(prop_aug))
         shp.append(torch.from_numpy(shape_labels))
         feats.append(torch.from_numpy(b))
+        feats_aug.append(torch.from_numpy(b[choices_aug]))
         labels.append(torch.from_numpy(c if not pseudo_label_flag else pseudo_label)) 
         scene_labels.append(torch.from_numpy(scene_label))
         if not pseudo_label_flag:
@@ -347,6 +349,7 @@ def trainMerge(tbl):
     masks_aug = torch.stack(masks_aug, 0)
     shp = torch.stack(shp, 0)
     feats = torch.stack(feats, 0)
+    feats_aug = torch.stack(feats_aug, 0)
     labels = torch.stack(labels, 0) # B, N
     scene_labels = torch.stack(scene_labels) # B, NumClasses
     texts = torch.stack(texts) if len(has_text) > 0 else torch.tensor(-1) # B, NumText, LenSeq
@@ -356,6 +359,7 @@ def trainMerge(tbl):
             'coords': locs,
             'coords_aug': locs_aug,
             'feature': feats,
+            'feature_aug': feats_aug,
             'boxes': boxes, # (NumBoxes, 6)
             'boxes_aug': boxes_aug, # (NumBoxes, 6)
             'masks': masks_aug, # Smask (augSmask=None is okay)
@@ -405,7 +409,7 @@ def valMerge(tbl):
         pc, box, shape, scene_name = val[i]
         a, (b, normal), c = pc
 
-        a, a_aug, b, c, shape_labels, prop, prop_aug, choices, choices_aug, target_bbox, target_bbox_mask, target_bbox_semcls = wypr_augmentation(a, b, c, normal, box, shape, augment=False)
+        a, b, c, shape_labels, prop, choices, target_bbox, target_bbox_mask, target_bbox_semcls = wypr_augmentation(a, b, c, normal, box, shape, augment=False)
 
         scene_label_inds = np.unique(c).astype('int')
         scene_label_inds = scene_label_inds[scene_label_inds >= 0]
