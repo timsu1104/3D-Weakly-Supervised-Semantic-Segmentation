@@ -52,7 +52,8 @@ def collect_files(x:str):
     data = torch.load(x)
     prefix = x[:-15]
     scene_name = prefix.split('/')[-1]
-    box_file = os.path.join(box_path, scene_name + '_prop.npy') if not cfg.use_gt else os.path.join(gt_box_path, scene_name + '_bbox.npy')
+    #box_file = os.path.join(box_path, scene_name + '_prop.npy') if not cfg.use_gt else os.path.join(gt_box_path, scene_name + '_bbox.npy')
+    box_file = os.path.join(gt_box_path, scene_name + '_bbox.npy')
     box = np.load(box_file)
 
     result = [data, box]
@@ -152,7 +153,7 @@ def trainMerge(tbl):
         pc = data[0]
         box = torch.from_numpy(data[1])
         # print("Read", box.shape[0], "boxes.")
-        # if box.shape[0] > 64: box = box[:64]
+        #if box.shape[0] > 30: box = box[:30]
         # print("Keep", box.shape[0], "boxes.")
         scene_name = data[-1]
         ind = 2
@@ -199,6 +200,7 @@ def trainMerge(tbl):
             texts.append(text)
 
         locs.append(torch.cat([a,torch.LongTensor(a.shape[0], 1).fill_(idx)],1))
+        #TODO:add gt_class
         boxes.append(torch.cat([box[:, :6],torch.LongTensor(box.shape[0], 1).fill_(idx)],1))
         feats.append(torch.from_numpy(b)+torch.randn(3)*0.1)
         labels.append(torch.from_numpy(c if not pseudo_label_flag else pseudo_label)) 
@@ -246,7 +248,7 @@ train_data_loader = torch.utils.data.DataLoader(
     num_workers=4, 
     shuffle=True,
     drop_last=True,
-    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    worker_init_fn=lambda x: np.random.seed(x)
 )
 
 valOffsets=[0]
@@ -325,7 +327,7 @@ val_data_loader = torch.utils.data.DataLoader(
     collate_fn=valMerge,
     num_workers=4,
     shuffle=False,
-    worker_init_fn=lambda x: np.random.seed(x+int(time.time()))
+    worker_init_fn=lambda x: np.random.seed(x)
 )
 
 if __name__ == '__main__':

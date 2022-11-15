@@ -1,5 +1,5 @@
 GENERAL:
-  training_name: train_with_gan
+  training_name: train_with_gan_test
   model_name: MultiLabel
 
 DATA:
@@ -11,7 +11,7 @@ DATA:
   label: scene_level
   in_radius: 2
   has_text: False
-
+  use_gt: True
 STRUCTURE:
   pointcloud_model:
     name: SparseConvFCNetDirectUpPool
@@ -22,7 +22,7 @@ STRUCTURE:
     residual_blocks: True #True or False
   projector:
     mask_channels: 1
-    mask_res: 64
+    mask_res: 32
     render_view: HWZ
   loss: 
     Classification: True
@@ -32,4 +32,4 @@ STRUCTURE:
 Training:
   epochs: 512
   lr: 0.004
-  dis_lr: 0.0001
+  dis_lr: 0.001

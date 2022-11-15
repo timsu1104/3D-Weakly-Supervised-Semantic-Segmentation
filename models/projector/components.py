@@ -1,7 +1,12 @@
+import sys
+import os
+#sys.path.append('/home/shizhong/3DUNetWithText')
+#print(sys.path)
 import torch
 from torch import nn
 import sparseconvnet as scn
 from dataset.data import NUM_CLASSES
+#NUM_CLASSES=20
 from utils.registry import MODEL_REGISTRY
 
 
@@ -37,8 +42,7 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         batch_pc = coords[batch_mask, :3]
         #print(feats.size)
         # batch_feats = feats[batch_mask]
-        
-        batch_class = pseudo_class[batch_mask]
+    
         batch_pc = ((batch_pc \
                      - offsets[batch_id.long()]) \
                     @ rots[batch_id.long()] \
@@ -51,9 +55,9 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         
         cropped_feats = feats[feats_sel_mask]
         cropped_coords = batch_pc[selected_mask]
-        cropped_class = batch_class[selected_mask]
+        cropped_class = pseudo_class[feats_sel_mask]
         original_pc=feats_sel_mask
-        #original_else=coords[(1-feats_sel_mask).bool()]
+        #originalx`_else=coords[(1-feats_sel_mask).bool()]
         original_else=None
         # centering
         cropped_coords[:, :3] -= cropped_coords[:, :3].min(0)[0]
@@ -63,13 +67,12 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
         #Get the main class in this box, for matting
         #print(cropped_feats.shape)
         box_logits=cropped_class.mean(dim=0)
-        print(box_logits)
+        #print(box_logits)
         #print(box_logits)
         max_logits,max_cls=box_logits.max(0)
         dominate_class.append(torch.full((cropped_class.size(0),1),max_cls, device=device))
         box_dominate_class.append(max_cls)
         coords_pool.append(cropped_coords)
-        original_pool.append(original_pc)
         #TODO：change back to feats
         feats_pool.append(cropped_class)
     batch_lens=[]
@@ -79,7 +82,6 @@ def cropBox(coords: torch.Tensor, feats: torch.Tensor, pseudo_class:torch.Tensor
     new_feats = torch.cat(feats_pool)
     dominate_class=torch.cat(dominate_class)
     box_dominate_class=torch.LongTensor(box_dominate_class).to(device)
-    original_pc=original_pool[0]
     if not debug:
         return new_coords, new_feats,batch_lens,dominate_class,box_dominate_class
     else:
@@ -98,7 +100,7 @@ class MattingModule(nn.Module):
     def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor,box_dominate_class):
         x=self.model(feats)
         x=torch.sigmoid(x)
-        print(box_dominate_class)
+        #print(box_dominate_class)
         
         x=x.gather(1,dominate_class)#get the mask of the dominate class
         #print(x.shape)
@@ -123,9 +125,9 @@ class DirectMattingModule(nn.Module):
         #self.model = nn.Linear(in_channels, out_channels*NUM_CLASSES)
         self.out_channels=out_channels
     def forward(self, coords: torch.Tensor, feats: torch.Tensor, dominate_class:torch.Tensor,box_dominate_class):
-
+        
         x=torch.sigmoid(feats)
-        print(box_dominate_class)
+        #print(box_dominate_class)
         
         x=x.gather(1,dominate_class)#get the mask of the dominate class
         #print(x.shape)
@@ -137,7 +139,7 @@ class DirectMattingModule(nn.Module):
         #print(new_coords[:,-1])
         appear_mask=torch.bincount(new_coords[:,-1].long(),minlength=box_dominate_class.shape[0])
         appear_mask=(appear_mask>=1)#Yyou can SET LEAST AVALIABLE image size heare
-        return new_coords, out_feat,box_dominate_class[appear_mask]
+        return coords[~mask.squeeze(1),:],new_coords, out_feat,box_dominate_class[appear_mask]
 @MODEL_REGISTRY.register()
 class Voxelizer(nn.Module):
     """
@@ -158,17 +160,26 @@ class Voxelizer(nn.Module):
         )
     # maxpooling
     def forward(self, coords: torch.Tensor, feats: torch.Tensor,box_class, view='HWZ'):
-        coords[:, :-1] = coords[:, :-1] * self.res
+        #print(coords,feats.mean())
+        coords[:, :-1] = coords[:, :-1] * (self.res-0.002)+0.001
         #print("Start voxelize")
-        
+        #print(coords[:,0].max(),coords[:,0].min(),coords[:,1].max(),coords[:,1].min(),coords[:,2].max(),coords[:,2].min())
+        print(feats.mean())
         voxel = self.voxelizer([coords, feats]) # [B, C, H, W, Z]
         
         _, _, H, W, Z = voxel.size()
-        #print(voxel.size())
+        #print(voxel.device)
         assert H == W == Z == self.res
         assert len(view) > 0, "view not selected!"
         view_cnt=0
         view_mask = []
+        
+        #print(voxel.shape)
+        #print(coords.shape,feats.mean())
+        #print(coords[:,0].mean(),coords[:,1].mean(),coords[:,2].mean())
+        #print(torch.max(voxel, dim=-3)[0].mean())
+        #a=torch.max(voxel, dim=-3)[0][0][0]
+        #print(a)
         if 'H' in view:
             view_mask.append(torch.max(voxel, dim=-3)[0])
             view_cnt+=1
@@ -184,6 +195,18 @@ class Voxelizer(nn.Module):
     
 if __name__ == '__main__':
     import numpy as np
+    print('hello')
+    test_res=20
+    pt_cnt=test_res*test_res//2
+    voxelizer = Voxelizer(1, resolution=test_res)
+    test_feats=torch.ones(pt_cnt,1).to('cuda')
+    test_coords=torch.rand(pt_cnt,3).to('cuda')*(test_res-0.002)+0.001
+    test_coords_ann=torch.zeros(pt_cnt,1).to('cuda')
+    test_coords=torch.cat((test_coords,test_coords_ann),1)
+    print(test_coords)
+    voxel=voxelizer.voxelizer([test_coords,test_feats])
+    print(voxel)
+    print(torch.max(voxel, dim=-3)[0])
     box = np.load('/home/zhengyuan/code/3D_weakly_segmentation_backbone/3DUNetWithText/ops/GeometricSelectiveSearch/gss/computed_proposal_scannet/fv_inst100_p100_d300/scene0015_00_prop.npy')
     print(box.shape)
     print(box[:5])

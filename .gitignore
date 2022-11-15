@@ -180,3 +180,4 @@ ops/GeometricSelectiveSearch/gss/computed_proposal_scannet
 dataset/ScanNet/scannet_all_points
 ops/GeometricSelectiveSearch/gss/visualization
 ops/GeometricSelectiveSearch/gss/aggregated_data
+**/val_processed_old

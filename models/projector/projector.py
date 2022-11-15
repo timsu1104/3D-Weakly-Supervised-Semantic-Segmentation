@@ -16,7 +16,7 @@ class Projector(nn.Module):
     
     def forward(self, coords, feats,pseudo_class, boxes, transform, view='HWZ'):
         cropped_coords, cropped_feats,batch_lens,dominate_class,box_class = cropBox(coords, feats, pseudo_class, boxes, transform)
-        segmented_coords, segmented_feats,seg_box_class= self.matting(cropped_coords, cropped_feats,dominate_class,box_class)
+        background,segmented_coords, segmented_feats,seg_box_class= self.matting(cropped_coords, cropped_feats,dominate_class,box_class)
         
         #print(box_class)
         #print(cropped_coords,segmented_coords)

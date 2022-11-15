@@ -35,9 +35,7 @@ def visualize_one_scene(f):
     pts[:,0:3] = mesh_vertices
     pts = np.dot(pts, axis_align_matrix.transpose()) # Nx4
     
-    plydata['vertex'].data['x'] = pts[:,0]
-    plydata['vertex'].data['y'] =pts[:,1]
-    plydata['vertex'].data['z'] =pts[:,2]
+     
     plydata.write(osp.join(out_folder, scene_name + '_aligned.ply'))
     
     box = np.load(f)

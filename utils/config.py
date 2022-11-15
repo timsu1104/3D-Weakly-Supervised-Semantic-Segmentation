@@ -15,6 +15,7 @@ def get_parser():
     parser.add_argument('--verbose', action='store_true', help='whether to print detail')
     parser.add_argument('--visualize', action='store_true', help='whether to visualize (only of use when validate)')
     parser.add_argument('--use_gt', action='store_true', help='whether to use gt box')
+    parser.add_argument('--seed', default=42, type=int, help='random seed for running')
 
     ### pretrain
     parser.add_argument('--pretrain', type=str, default='', help='path to pretrain model')
